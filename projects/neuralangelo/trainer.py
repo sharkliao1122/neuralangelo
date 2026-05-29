@@ -10,10 +10,13 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 -----------------------------------------------------------------------------
 '''
 
+import os
+
 import torch
 import torch.nn.functional as torch_F
 import wandb
 import skvideo.io
+from torchvision.transforms import functional as torchvision_F
 
 from imaginaire.utils.distributed import master_only
 from imaginaire.utils.visualization import wandb_image, preprocess_image
@@ -116,14 +119,30 @@ class Trainer(BaseTrainer):
             opacity=preprocess_image(data_all["opacity_map"]),
         )
         inputdict, outputdict = self._get_ffmpeg_dicts()
+        try:
+            for key, image_list in results.items():
+                print(f"writing video ({key})...")
+                video_fname = f"{output_dir}/{key}.mp4"
+                video_writer = skvideo.io.FFmpegWriter(video_fname, inputdict=inputdict, outputdict=outputdict)
+                for image in image_list:
+                    image = (image * 255).byte().permute(1, 2, 0).numpy()
+                    video_writer.writeFrame(image)
+                video_writer.close()
+        except AssertionError as exc:
+            if "FFmpeg" not in str(exc):
+                raise
+            print(f"FFmpeg unavailable, saving PNG frames instead: {exc}")
+            self._dump_test_frames(results, output_dir)
+
+    def _dump_test_frames(self, results, output_dir):
+        frames_root = os.path.join(output_dir, "frames")
         for key, image_list in results.items():
-            print(f"writing video ({key})...")
-            video_fname = f"{output_dir}/{key}.mp4"
-            video_writer = skvideo.io.FFmpegWriter(video_fname, inputdict=inputdict, outputdict=outputdict)
-            for image in image_list:
-                image = (image * 255).byte().permute(1, 2, 0).numpy()
-                video_writer.writeFrame(image)
-            video_writer.close()
+            key_dir = os.path.join(frames_root, key)
+            os.makedirs(key_dir, exist_ok=True)
+            print(f"writing frames ({key})...")
+            for idx, image in enumerate(image_list):
+                image_path = os.path.join(key_dir, f"{idx:04d}.png")
+                torchvision_F.to_pil_image((image * 255).byte()).save(image_path)
 
     def _get_ffmpeg_dicts(self):
         inputdict = {"-r": str(30)}

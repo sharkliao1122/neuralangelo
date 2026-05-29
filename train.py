@@ -21,6 +21,7 @@ from imaginaire.utils.gpu_affinity import set_affinity
 from imaginaire.trainers.utils.logging import init_logging
 from imaginaire.trainers.utils.get_trainer import get_trainer
 from imaginaire.utils.set_random_seed import set_random_seed
+from projects.neuralangelo.utils.total_time import run_with_total_time
 
 
 def parse_args():
@@ -34,6 +35,8 @@ def parse_args():
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--profile', action='store_true')
     parser.add_argument('--show_pbar', action='store_true')
+    parser.add_argument('--total_time', action='store_true',
+                        help='Print total wall-clock training time when training finishes.')
     parser.add_argument('--wandb', action='store_true', help="Enable using Weights & Biases as the logger")
     parser.add_argument('--wandb_name', default='default', type=str)
     parser.add_argument('--resume', action='store_true')
@@ -90,11 +93,15 @@ def main():
 
     trainer.mode = 'train'
     # Start training.
-    trainer.train(cfg,
-                  trainer.train_data_loader,
-                  single_gpu=args.single_gpu,
-                  profile=args.profile,
-                  show_pbar=args.show_pbar)
+    run_with_total_time(
+        args.total_time,
+        trainer.train,
+        cfg,
+        trainer.train_data_loader,
+        single_gpu=args.single_gpu,
+        profile=args.profile,
+        show_pbar=args.show_pbar,
+    )
 
     # Finalize training.
     trainer.finalize(cfg)
