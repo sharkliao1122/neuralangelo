@@ -13,9 +13,10 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 import torch
 import torch.nn.functional as torch_F
 import wandb
+import skvideo.io
 
 from imaginaire.utils.distributed import master_only
-from imaginaire.utils.visualization import wandb_image
+from imaginaire.utils.visualization import wandb_image, preprocess_image
 from projects.nerf.trainers.base import BaseTrainer
 from projects.neuralangelo.utils.misc import get_scheduler, eikonal_loss, curvature_loss
 
@@ -104,6 +105,30 @@ class Trainer(BaseTrainer):
                 f"{mode}/vis/opacity": wandb_image(data["opacity_map"]),
             })
         wandb.log(images, step=self.current_iteration)
+
+    def dump_test_results(self, data_all, output_dir):
+        results = dict(
+            rgb_target=preprocess_image(data_all["image"]),
+            rgb_render=preprocess_image(data_all["rgb_map"]),
+            rgb_error=preprocess_image((data_all["rgb_map"] - data_all["image"]).abs()),
+            normal=preprocess_image(data_all["normal_map"], from_range=(-1, 1)),
+            inv_depth=preprocess_image(1 / (data_all["depth_map"] + 1e-8) * self.cfg.trainer.depth_vis_scale),
+            opacity=preprocess_image(data_all["opacity_map"]),
+        )
+        inputdict, outputdict = self._get_ffmpeg_dicts()
+        for key, image_list in results.items():
+            print(f"writing video ({key})...")
+            video_fname = f"{output_dir}/{key}.mp4"
+            video_writer = skvideo.io.FFmpegWriter(video_fname, inputdict=inputdict, outputdict=outputdict)
+            for image in image_list:
+                image = (image * 255).byte().permute(1, 2, 0).numpy()
+                video_writer.writeFrame(image)
+            video_writer.close()
+
+    def _get_ffmpeg_dicts(self):
+        inputdict = {"-r": str(30)}
+        outputdict = {"-crf": str(10), "-pix_fmt": "yuv420p"}
+        return inputdict, outputdict
 
     def train(self, cfg, data_loader, single_gpu=False, profile=False, show_pbar=False):
         self.progress = self.model_module.progress = self.current_iteration / self.cfg.max_iter

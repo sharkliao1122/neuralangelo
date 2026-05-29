@@ -297,9 +297,13 @@ class Timer(object):
         self.cfg = cfg
         self.time_iteration = 0
         self.time_epoch = 0
+        self.timeout_supported = hasattr(signal, "SIGALRM") and hasattr(signal, "alarm")
         if is_master():
-            # noinspection PyTypeChecker
-            signal.signal(signal.SIGALRM, functools.partial(alarm_handler, self.cfg.timeout_period))
+            if self.timeout_supported:
+                # noinspection PyTypeChecker
+                signal.signal(signal.SIGALRM, functools.partial(alarm_handler, self.cfg.timeout_period))
+            else:
+                print("(SIGALRM unavailable on this platform, disabling timeout watchdog...)")
 
     def reset(self):
         self.accu_forw_iter_time = 0
@@ -373,4 +377,5 @@ class Timer(object):
 
     @master_only
     def reset_timeout_counter(self):
-        signal.alarm(self.cfg.timeout_period)
+        if self.timeout_supported:
+            signal.alarm(self.cfg.timeout_period)
