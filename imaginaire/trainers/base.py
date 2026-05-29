@@ -15,6 +15,7 @@ import json
 import os
 import threading
 import time
+from pathlib import Path
 import wandb
 from tqdm import tqdm
 import inspect
@@ -80,7 +81,8 @@ class BaseTrainer(object):
         else:
             self.credentials = None
         if 'TORCH_HOME' not in os.environ:
-            os.environ['TORCH_HOME'] = os.path.join(os.environ['HOME'], ".cache")
+            home_dir = os.environ.get("HOME") or os.environ.get("USERPROFILE") or str(Path.home())
+            os.environ['TORCH_HOME'] = os.path.join(home_dir, ".cache")
 
     def set_data_loader(self, cfg, split, shuffle=True, drop_last=True, seed=0):
         """Set the data loader corresponding to the indicated split.
@@ -248,7 +250,11 @@ class BaseTrainer(object):
                     with open(wandb_path, "w") as f:
                         f.write(wandb_id)
             if use_group:
-                group, name = cfg.logdir.split("/")[-2:]
+                log_parts = Path(os.path.normpath(cfg.logdir)).parts
+                if len(log_parts) >= 2:
+                    group, name = log_parts[-2:]
+                else:
+                    group, name = None, os.path.basename(cfg.logdir)
             else:
                 group, name = None, os.path.basename(cfg.logdir)
 
