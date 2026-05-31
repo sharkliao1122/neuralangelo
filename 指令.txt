@@ -1,0 +1,37 @@
+conda activate neuralangelo_5080
+cd /d C:\research\neuralangelo_test
+
+--------------------------- training ----------------------------
+
+python train.py ^
+  --single_gpu ^
+  --config C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\DnC_box.yaml ^
+  --logdir C:\research\neuralangelo_test\logs\box_0529 ^
+  --show_pbar ^
+  --total_time ^
+  --max_iter=200000 ^
+  --logging_iter=100 ^
+  --validation_iter=20000 ^
+  --checkpoint.save_iter=20000 ^
+  --checkpoint.save_latest_iter=20000 ^
+  --data.train.batch_size=1 ^
+  --data.val.batch_size=1 ^
+  --data.val.subset=1 ^
+  --data.val.image_size=[240,320] ^
+  --data.num_workers=2 ^
+  --data.preload=false
+
+--------------------------- extract mesh ----------------------------
+
+conda activate neuralangelo_5080
+cd /d C:\research\neuralangelo_test
+
+python projects\neuralangelo\scripts\extract_mesh.py ^
+  --single_gpu ^
+  --config C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\DnC_box.yaml ^
+  --checkpoint C:\research\neuralangelo_test\logs\box_0529\latest_checkpoint.pt ^
+  --output_file C:\research\neuralangelo_test\logs\box_0529\box_0529.obj ^
+  --resolution 1024 ^
+  --block_res 128 ^
+  --textured ^
+  --keep_lcc

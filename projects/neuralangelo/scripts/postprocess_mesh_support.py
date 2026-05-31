@@ -18,6 +18,7 @@ import os
 import numpy as np
 import trimesh
 from PIL import Image
+from scipy.spatial import cKDTree
 
 
 def parse_args():
@@ -277,6 +278,30 @@ def face_filtered_output_path(output_path):
     return f"{stem}.face_filtered{ext}"
 
 
+def get_vertex_colors(mesh):
+    colors = getattr(getattr(mesh, "visual", None), "vertex_colors", None)
+    if colors is None or len(colors) != len(mesh.vertices):
+        return None
+    return np.asarray(colors)
+
+
+def apply_nearest_vertex_colors(source_mesh, target_mesh):
+    source_colors = get_vertex_colors(source_mesh)
+    if source_colors is None or len(target_mesh.vertices) == 0:
+        return False, None
+    tree = cKDTree(np.asarray(source_mesh.vertices))
+    distances, indices = tree.query(np.asarray(target_mesh.vertices), k=1)
+    target_mesh.visual.vertex_colors = source_colors[indices]
+    distances = np.asarray(distances, dtype=np.float32)
+    stats = dict(
+        mean=float(distances.mean()) if len(distances) else 0.0,
+        median=float(np.median(distances)) if len(distances) else 0.0,
+        q95=float(np.quantile(distances, 0.95)) if len(distances) else 0.0,
+        max=float(distances.max()) if len(distances) else 0.0,
+    )
+    return True, stats
+
+
 def main():
     args = parse_args()
     mesh = trimesh.load(args.mesh, process=False)
@@ -302,9 +327,12 @@ def main():
     if args.write_face_filtered:
         face_filtered_path = face_filtered_output_path(args.output)
         os.makedirs(os.path.dirname(face_filtered_path), exist_ok=True)
+        face_filtered_colored, face_filtered_color_transfer = apply_nearest_vertex_colors(mesh, filtered)
         filtered.export(face_filtered_path)
     else:
         face_filtered_path = None
+        face_filtered_colored = False
+        face_filtered_color_transfer = None
 
     components = filtered.split(only_watertight=False)
     merged, component_stats, anchor_idx, kept_indices = component_filter(
@@ -321,6 +349,7 @@ def main():
         args.near_distance,
     )
 
+    merged_colored, merged_color_transfer = apply_nearest_vertex_colors(mesh, merged)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
     merged.export(args.output)
 
@@ -344,6 +373,7 @@ def main():
             faces=int(len(mesh.faces)),
             components=int(len(mesh.split(only_watertight=False))),
             bounds=mesh.bounds.tolist(),
+            has_vertex_colors=get_vertex_colors(mesh) is not None,
         ),
         vertex_support=dict(
             mean=float(vertex_support.mean()) if len(vertex_support) else 0.0,
@@ -366,11 +396,18 @@ def main():
             total_components=int(len(components)),
             per_component=component_stats,
         ),
+        color_transfer=dict(
+            face_filtered_applied=face_filtered_colored,
+            face_filtered_nn_distance=face_filtered_color_transfer,
+            final_applied=merged_colored,
+            final_nn_distance=merged_color_transfer,
+        ),
         final=dict(
             verts=int(len(merged.vertices)),
             faces=int(len(merged.faces)),
             components=int(len(merged.split(only_watertight=False))),
             bounds=merged.bounds.tolist(),
+            has_vertex_colors=get_vertex_colors(merged) is not None,
         ),
     )
 
