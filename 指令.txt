@@ -6,7 +6,8 @@ cd /d C:\research\neuralangelo_test
 python train.py ^
   --single_gpu ^
   --config C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\DnC_box.yaml ^
-  --logdir C:\research\neuralangelo_test\logs\box_0529 ^
+  --logdir C:\research\neuralangelo_test\logs\box_0531_smoke_stable ^
+  --resume ^
   --show_pbar ^
   --total_time ^
   --max_iter=200000 ^
@@ -18,9 +19,14 @@ python train.py ^
   --data.val.batch_size=1 ^
   --data.val.subset=1 ^
   --data.val.image_size=[240,320] ^
-  --data.num_workers=2 ^
-  --data.preload=false
-
+  --data.num_workers=0 ^
+  --data.preload=false ^
+  --optim.params.lr=1e-4 ^
+  --trainer.loss_weight.curvature=0.0 ^
+  --model.background.enabled=false ^
+  --model.appear_embed.enabled=false ^
+  --model.render.rand_rays=256 ^
+  --model.render.num_sample_hierarchy=2
 --------------------------- extract mesh ----------------------------
 
 conda activate neuralangelo_5080
