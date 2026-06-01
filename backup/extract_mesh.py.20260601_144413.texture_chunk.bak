@@ -36,9 +36,6 @@ def parse_args():
     parser.add_argument("--block_res", default=64, type=int, help="Block-wise resolution for marching cubes")
     parser.add_argument("--output_file", default="mesh.ply", type=str, help="Output file name")
     parser.add_argument("--textured", action="store_true", help="Export mesh with texture")
-    parser.add_argument("--texture_chunk_size", default=16384, type=int,
-                        help="Vertices per GPU chunk during textured color extraction. "
-                             "Lower this if --textured runs out of memory. Use <= 0 to disable chunking.")
     parser.add_argument("--keep_lcc", action="store_true",
                         help="Keep only largest connected component. May remove thin structures.")
     parser.add_argument("--clean_mesh", action="store_true",
@@ -134,8 +131,7 @@ def main():
     sdf_func = lambda x: -trainer.model_module.neural_sdf.sdf(x)  # noqa: E731
     texture_func = partial(extract_texture, neural_sdf=trainer.model_module.neural_sdf,
                            neural_rgb=trainer.model_module.neural_rgb,
-                           appear_embed=trainer.model_module.appear_embed,
-                           texture_chunk_size=args.texture_chunk_size) if args.textured else None
+                           appear_embed=trainer.model_module.appear_embed) if args.textured else None
     mesh = extract_mesh(sdf_func=sdf_func, bounds=bounds, intv=(2.0 / args.resolution),
                         block_res=args.block_res, texture_func=texture_func, filter_lcc=args.keep_lcc)
 
