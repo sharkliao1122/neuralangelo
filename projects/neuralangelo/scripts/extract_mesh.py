@@ -22,6 +22,7 @@ from imaginaire.config import Config, recursive_update_strict, parse_cmdline_arg
 from imaginaire.utils.distributed import init_dist, get_world_size, is_master, master_only_print as print  # noqa: E402
 from imaginaire.utils.gpu_affinity import set_affinity  # noqa: E402
 from imaginaire.trainers.utils.get_trainer import get_trainer  # noqa: E402
+from projects.neuralangelo.utils.mesh_cleanup import export_cleanup_outputs  # noqa: E402
 from projects.neuralangelo.utils.mesh import extract_mesh, extract_texture  # noqa: E402
 
 
@@ -37,8 +38,49 @@ def parse_args():
     parser.add_argument("--textured", action="store_true", help="Export mesh with texture")
     parser.add_argument("--keep_lcc", action="store_true",
                         help="Keep only largest connected component. May remove thin structures.")
+    parser.add_argument("--clean_mesh", action="store_true",
+                        help="Run chair-oriented mesh cleanup after exporting the raw mesh.")
+    parser.add_argument("--clean_transforms", default=None,
+                        help="Optional transforms.json override for cleanup. Defaults to cfg.data.root/transforms.json.")
+    parser.add_argument("--clean_output_file", default=None,
+                        help="Optional output path for the cleaned mesh. Defaults to *_cleaned next to output_file.")
+    parser.add_argument("--clean_summary_json", default=None,
+                        help="Optional summary JSON path for cleanup output.")
+    parser.add_argument("--clean_frame_sample_count", type=int, default=24,
+                        help="Number of RGBA frames used for cleanup support checks. Use <= 0 for all frames.")
+    parser.add_argument("--clean_min_valid_views", type=int, default=3,
+                        help="Minimum projected views required before a vertex support score is trusted.")
+    parser.add_argument("--clean_min_face_support", type=float, default=0.28,
+                        help="Base average vertex support required to keep a face.")
+    parser.add_argument("--clean_low_z_threshold", type=float, default=-0.40,
+                        help="Normalized z threshold below which stricter face filtering is applied.")
+    parser.add_argument("--clean_low_z_support", type=float, default=0.40,
+                        help="Required average face support below clean_low_z_threshold.")
+    parser.add_argument("--clean_min_component_faces", type=int, default=1200,
+                        help="Directly keep components above this face count if they also have strong support.")
+    parser.add_argument("--clean_min_component_support", type=float, default=0.45,
+                        help="Directly keep large components above this support.")
+    parser.add_argument("--clean_near_component_faces", type=int, default=250,
+                        help="Minimum face count for smaller components that are close to the anchor component.")
+    parser.add_argument("--clean_near_component_support", type=float, default=0.28,
+                        help="Minimum support for smaller components that are close to the anchor component.")
+    parser.add_argument("--clean_near_distance", type=float, default=0.22,
+                        help="Maximum normalized bbox gap for a smaller component to be retained near the anchor.")
+    parser.add_argument("--clean_bottom_z_margin", type=float, default=0.06,
+                        help="Remove components whose top is this far below the anchor bottom.")
+    parser.add_argument("--clean_bottom_gap", type=float, default=0.10,
+                        help="Maximum XY bbox gap for a low component to be treated as under the anchor.")
+    parser.add_argument("--clean_write_intermediate", action="store_true",
+                        help="Also export the face-filtered mesh before component filtering.")
     args, cfg_cmd = parser.parse_known_args()
     return args, cfg_cmd
+
+
+def get_clean_output_path(raw_output_path, clean_output_path=None):
+    if clean_output_path:
+        return clean_output_path
+    stem, ext = os.path.splitext(raw_output_path)
+    return f"{stem}_cleaned{ext}"
 
 
 def main():
@@ -99,6 +141,40 @@ def main():
         mesh.update_faces(mesh.nondegenerate_faces())
         os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
         mesh.export(args.output_file)
+        print(f"Saved raw mesh to {args.output_file}")
+
+        if args.clean_mesh:
+            clean_transforms = args.clean_transforms or meta_fname
+            clean_output_file = get_clean_output_path(args.output_file, args.clean_output_file)
+            _, summary, face_filtered_path, summary_path = export_cleanup_outputs(
+                mesh.copy(),
+                clean_transforms,
+                clean_output_file,
+                summary_json=args.clean_summary_json,
+                write_face_filtered=args.clean_write_intermediate,
+                frame_sample_count=args.clean_frame_sample_count,
+                min_valid_views=args.clean_min_valid_views,
+                min_face_support=args.clean_min_face_support,
+                low_z_threshold=args.clean_low_z_threshold,
+                low_z_support=args.clean_low_z_support,
+                min_component_faces=args.clean_min_component_faces,
+                min_component_support=args.clean_min_component_support,
+                near_component_faces=args.clean_near_component_faces,
+                near_component_support=args.clean_near_component_support,
+                near_distance=args.clean_near_distance,
+                bottom_z_margin=args.clean_bottom_z_margin,
+                bottom_gap=args.clean_bottom_gap,
+            )
+            print(f"Saved cleaned mesh to {clean_output_file}")
+            if face_filtered_path:
+                print(f"Saved face-filtered mesh to {face_filtered_path}")
+            print(f"Saved cleanup summary to {summary_path}")
+            print(
+                "Cleaned mesh:",
+                f"verts={summary['final']['verts']}",
+                f"faces={summary['final']['faces']}",
+                f"components={summary['final']['components']}",
+            )
 
 
 if __name__ == "__main__":
