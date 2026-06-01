@@ -39,7 +39,9 @@ def parse_args():
     parser.add_argument("--keep_lcc", action="store_true",
                         help="Keep only largest connected component. May remove thin structures.")
     parser.add_argument("--clean_mesh", action="store_true",
-                        help="Run chair-oriented mesh cleanup after exporting the raw mesh.")
+                        help="Run chair-oriented mesh cleanup after exporting the raw mesh. "
+                             "By default this writes only the raw mesh, the cleaned mesh, "
+                             "and the cleaned summary JSON.")
     parser.add_argument("--clean_transforms", default=None,
                         help="Optional transforms.json override for cleanup. Defaults to cfg.data.root/transforms.json.")
     parser.add_argument("--clean_output_file", default=None,
@@ -71,7 +73,9 @@ def parse_args():
     parser.add_argument("--clean_bottom_gap", type=float, default=0.10,
                         help="Maximum XY bbox gap for a low component to be treated as under the anchor.")
     parser.add_argument("--clean_write_intermediate", action="store_true",
-                        help="Also export the face-filtered mesh before component filtering.")
+                        help="Also export the face-filtered intermediate mesh. "
+                             "Without this flag, clean_mesh keeps output to the raw mesh, "
+                             "cleaned mesh, and cleaned summary JSON only.")
     args, cfg_cmd = parser.parse_known_args()
     return args, cfg_cmd
 
