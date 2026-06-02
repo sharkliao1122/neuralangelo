@@ -1,0 +1,18 @@
+conda activate neuralangelo_5080
+cd /d C:\research\neuralangelo_test
+
+------------------ train ------------------
+set CONFIG=projects\neuralangelo\configs\custom\chair_from_nerf2mesh.yaml
+set GROUP=chair
+set NAME=chair_from_nerf2mesh_official
+
+python train.py ^
+  --single_gpu ^
+  --logdir=logs/%GROUP%/%NAME% ^
+  --config=%CONFIG% ^
+  --show_pbar ^
+  --total_time
+
+
+------------------ extract mesh ------------------
+

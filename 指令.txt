@@ -27,17 +27,20 @@ python train.py ^
   --model.appear_embed.enabled=false ^
   --model.render.rand_rays=256 ^
   --model.render.num_sample_hierarchy=2
+
 --------------------------- extract mesh ----------------------------
 
-conda activate neuralangelo_5080
-cd /d C:\research\neuralangelo_test
-
+set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 python projects\neuralangelo\scripts\extract_mesh.py ^
   --single_gpu ^
-  --config C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\DnC_box.yaml ^
-  --checkpoint C:\research\neuralangelo_test\logs\box_0529\latest_checkpoint.pt ^
-  --output_file C:\research\neuralangelo_test\logs\box_0529\box_0529.obj ^
+  --config C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\chair_from_nerf2mesh.yaml ^
+  --checkpoint C:\research\neuralangelo_test\logs\chair\chair_from_nerf2mesh_fast_safe\epoch_10000_iteration_000500000_checkpoint.pt ^
+  --output_file C:\research\neuralangelo_test\logs\chair\chair_from_nerf2mesh_fast_safe\mesh_500k_official_textured.ply ^
   --resolution 1024 ^
   --block_res 128 ^
   --textured ^
-  --keep_lcc
+  --texture_chunk_size 16384 ^
+  --keep_lcc ^
+  --clean_mesh ^
+  --clean_bottom_z_margin 0.06 ^
+  --clean_bottom_gap 0.10
