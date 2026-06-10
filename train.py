@@ -23,6 +23,7 @@ from imaginaire.trainers.utils.logging import init_logging
 from imaginaire.trainers.utils.get_trainer import get_trainer
 from imaginaire.utils.set_random_seed import set_random_seed
 from projects.neuralangelo.utils.command_logger import record_training_command
+from projects.neuralangelo.utils.loss_curve import plot_loss_curves
 from projects.neuralangelo.utils.total_time import run_with_total_time
 
 
@@ -41,6 +42,8 @@ def parse_args():
                         help='Print total wall-clock training time when training finishes.')
     parser.add_argument('--record_command', action='store_true',
                         help='Record this training command to the log directory.')
+    parser.add_argument('--plot_loss_curve', action='store_true',
+                        help='Plot loss curves from the local loss history after training finishes.')
     parser.add_argument('--wandb', action='store_true', help="Enable using Weights & Biases as the logger")
     parser.add_argument('--wandb_name', default='default', type=str)
     parser.add_argument('--resume', action='store_true')
@@ -122,6 +125,12 @@ def main():
 
     # Finalize training.
     trainer.finalize(cfg)
+    if args.plot_loss_curve and is_master():
+        try:
+            output_paths = plot_loss_curves(cfg.logdir)
+            print(f"Saved {len(output_paths)} loss curve plot(s) to {os.path.join(cfg.logdir, 'loss_curves')}.")
+        except Exception as error:
+            print(f"Warning: failed to plot loss curves: {error}")
 
 
 if __name__ == "__main__":
