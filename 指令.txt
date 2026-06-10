@@ -44,3 +44,16 @@ python projects\neuralangelo\scripts\extract_mesh.py ^
   --clean_mesh ^
   --clean_bottom_z_margin 0.06 ^
   --clean_bottom_gap 0.10
+
+--------------------------- training ----------------------------
+set CONFIG=projects\neuralangelo\configs\custom\chair_from_nerf2mesh.yaml
+set GROUP=chair
+set NAME=chair_from_nerf2mesh_official
+
+python train.py ^
+  --single_gpu ^
+  --logdir=logs/%GROUP%/%NAME% ^
+  --config=%CONFIG% ^
+  --show_pbar ^
+  --total_time
+

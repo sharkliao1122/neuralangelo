@@ -9,14 +9,14 @@ checkpoints
 *.ipynb
 *.DS_Store
 *.pyc
-
+*.json
+*.yaml
 # Credential information that should never be checked in
 *.secret
 
 # Data types
-*.png
+
 *.hdr
-*.jpg
 *.jpeg
 *.pgm
 *.tiff
@@ -29,7 +29,7 @@ checkpoints
 *.pt
 *.bin
 *.ply
-
+*.obj
 # log folder
 logs/
 
