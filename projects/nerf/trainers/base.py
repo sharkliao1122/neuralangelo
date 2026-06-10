@@ -14,6 +14,7 @@ import torch
 import wandb
 from imaginaire.trainers.base import BaseTrainer
 from imaginaire.utils.distributed import is_master, master_only
+from projects.neuralangelo.utils.loss_curve import append_loss_history
 from tqdm import tqdm
 
 from projects.nerf.utils.misc import collate_test_data_batches, get_unique_test_data, trim_test_samples
@@ -81,6 +82,7 @@ class BaseTrainer(BaseTrainer):
             scalars.update({"time/epoch": self.timer.time_epoch})
         scalars.update({f"{mode}/loss/{key}": value for key, value in self.losses.items()})
         scalars.update(iteration=self.current_iteration, epoch=self.current_epoch)
+        append_loss_history(self.cfg.logdir, self.current_iteration, self.current_epoch, mode, self.losses)
         wandb.log(scalars, step=self.current_iteration)
 
     @master_only

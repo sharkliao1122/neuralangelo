@@ -12,6 +12,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 import argparse
 import os
+import sys
 
 import imaginaire.config
 from imaginaire.config import Config, recursive_update_strict, parse_cmdline_arguments
@@ -21,6 +22,7 @@ from imaginaire.utils.gpu_affinity import set_affinity
 from imaginaire.trainers.utils.logging import init_logging
 from imaginaire.trainers.utils.get_trainer import get_trainer
 from imaginaire.utils.set_random_seed import set_random_seed
+from projects.neuralangelo.utils.command_logger import record_training_command
 from projects.neuralangelo.utils.total_time import run_with_total_time
 
 
@@ -37,6 +39,8 @@ def parse_args():
     parser.add_argument('--show_pbar', action='store_true')
     parser.add_argument('--total_time', action='store_true',
                         help='Print total wall-clock training time when training finishes.')
+    parser.add_argument('--record_command', action='store_true',
+                        help='Record this training command to the log directory.')
     parser.add_argument('--wandb', action='store_true', help="Enable using Weights & Biases as the logger")
     parser.add_argument('--wandb_name', default='default', type=str)
     parser.add_argument('--resume', action='store_true')
@@ -74,6 +78,18 @@ def main():
     if is_master():
         cfg.print_config()
         cfg.save_config(cfg.logdir)
+        if args.record_command:
+            record_training_command(
+                cfg.logdir,
+                argv=sys.argv,
+                metadata={
+                    "config": args.config,
+                    "logdir": cfg.logdir,
+                    "checkpoint": args.checkpoint,
+                    "resume": args.resume,
+                    "seed": args.seed,
+                },
+            )
 
     # Initialize cudnn.
     init_cudnn(cfg.cudnn.deterministic, cfg.cudnn.benchmark)
@@ -101,6 +117,7 @@ def main():
         single_gpu=args.single_gpu,
         profile=args.profile,
         show_pbar=args.show_pbar,
+        output_path=os.path.join(cfg.logdir, "total_time.txt"),
     )
 
     # Finalize training.
