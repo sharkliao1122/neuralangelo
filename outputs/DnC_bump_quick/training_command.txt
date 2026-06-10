@@ -1,0 +1,15 @@
+[2026-06-10T23:13:43]
+cwd: C:\research\neuralangelo_test
+command: train.py --config=projects/neuralangelo/configs/custom/DnC_bump.yaml --logdir=C:\research\neuralangelo_test\outputs\DnC_bump_quick --single_gpu --show_pbar --total_time --record_command --plot_loss_curve --max_iter=20000 --validation_iter=2000 --checkpoint.save_iter=5000 --optim.params.lr=5e-4 --trainer.loss_weight.curvature=0.0 --model.background.enabled! --model.render.num_samples.background=0 --model.appear_embed.enabled! --model.render.rand_rays=256 --data.num_workers=0
+metadata: {"checkpoint": null, "config": "projects/neuralangelo/configs/custom/DnC_bump.yaml", "logdir": "C:\\research\\neuralangelo_test\\outputs\\DnC_bump_quick", "resume": false, "seed": 0}
+
+[2026-06-10T23:21:10]
+cwd: C:\research\neuralangelo_test
+command: train.py --config=projects/neuralangelo/configs/custom/DnC_bump.yaml --logdir=C:\research\neuralangelo_test\outputs\DnC_bump_quick --single_gpu --show_pbar --total_time --record_command --plot_loss_curve --max_iter=20000 --validation_iter=2000 --checkpoint.save_iter=5000 --optim.params.lr=5e-4 --trainer.loss_weight.curvature=0.0 --model.background.enabled! --model.render.num_samples.background=0 --model.appear_embed.enabled! --model.render.rand_rays=256 --data.num_workers=4
+metadata: {"checkpoint": null, "config": "projects/neuralangelo/configs/custom/DnC_bump.yaml", "logdir": "C:\\research\\neuralangelo_test\\outputs\\DnC_bump_quick", "resume": false, "seed": 0}
+
+[2026-06-10T23:33:18]
+cwd: C:\research\neuralangelo_test
+command: train.py --config=projects/neuralangelo/configs/custom/DnC_bump.yaml --logdir=C:\research\neuralangelo_test\outputs\DnC_bump_quick --single_gpu --show_pbar --total_time --record_command --plot_loss_curve --max_iter=2000 --validation_iter=2000 --checkpoint.save_iter=5000 --optim.params.lr=5e-4 --trainer.loss_weight.curvature=0.0 --model.background.enabled! --model.render.num_samples.background=0 --model.appear_embed.enabled! --model.render.rand_rays=256 --data.num_workers=4
+metadata: {"checkpoint": null, "config": "projects/neuralangelo/configs/custom/DnC_bump.yaml", "logdir": "C:\\research\\neuralangelo_test\\outputs\\DnC_bump_quick", "resume": false, "seed": 0}
+
