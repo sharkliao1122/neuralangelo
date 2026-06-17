@@ -36,7 +36,10 @@ def get_face_rgb(mesh):
         raise RuntimeError("Mesh cleanup requires vertex colors. Use a textured PLY input.")
     if len(mesh.faces) == 0:
         return np.zeros((0, 3), dtype=np.float32)
-    return vertex_colors[mesh.faces][:, :, :3].mean(axis=1).astype(np.float32)
+    faces = np.asarray(mesh.faces, dtype=np.int64)
+    rgb = np.asarray(vertex_colors[:, :3], dtype=np.uint16)
+    face_rgb = rgb[faces[:, 0]] + rgb[faces[:, 1]] + rgb[faces[:, 2]]
+    return (face_rgb.astype(np.float32) / 3.0).astype(np.float32, copy=False)
 
 
 def get_black_face_mask(face_rgb, black_rgb_threshold):
@@ -45,32 +48,118 @@ def get_black_face_mask(face_rgb, black_rgb_threshold):
     return face_rgb.max(axis=1) <= float(black_rgb_threshold)
 
 
+def build_black_face_edge_pairs(mesh, black_indices):
+    faces = np.asarray(mesh.faces, dtype=np.int64)[black_indices]
+    edge_count = len(faces) * 3
+    edges = np.empty((edge_count, 2), dtype=np.int64)
+    edges[0::3] = faces[:, [0, 1]]
+    edges[1::3] = faces[:, [1, 2]]
+    edges[2::3] = faces[:, [2, 0]]
+    edges.sort(axis=1)
+
+    face_refs = np.repeat(np.arange(len(faces), dtype=np.int64), 3)
+    order = np.lexsort((edges[:, 1], edges[:, 0]))
+    sorted_edges = edges[order]
+    sorted_refs = face_refs[order]
+
+    same_edge = np.all(sorted_edges[1:] == sorted_edges[:-1], axis=1)
+    if not np.any(same_edge):
+        return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64)
+
+    duplicate_edge_mask = np.zeros(len(sorted_edges), dtype=bool)
+    duplicate_edge_mask[:-1] |= same_edge
+    duplicate_edge_mask[1:] |= same_edge
+
+    duplicate_edges = sorted_edges[duplicate_edge_mask]
+    duplicate_refs = sorted_refs[duplicate_edge_mask]
+    group_breaks = np.flatnonzero(np.any(duplicate_edges[1:] != duplicate_edges[:-1], axis=1)) + 1
+    group_starts = np.concatenate(([0], group_breaks))
+    group_ends = np.concatenate((group_breaks, [len(duplicate_edges)]))
+
+    rows = []
+    cols = []
+    for start, end in zip(group_starts, group_ends):
+        refs = duplicate_refs[start:end]
+        if len(refs) < 2:
+            continue
+        rows.append(np.full(len(refs) - 1, refs[0], dtype=np.int64))
+        cols.append(refs[1:].astype(np.int64, copy=False))
+
+    if not rows:
+        return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64)
+    return np.concatenate(rows), np.concatenate(cols)
+
+
+def connected_components_from_pairs(node_count, rows, cols):
+    if node_count == 0:
+        return np.zeros(0, dtype=np.int64)
+    if len(rows) == 0:
+        return np.arange(node_count, dtype=np.int64)
+
+    try:
+        from scipy import sparse
+        from scipy.sparse.csgraph import connected_components
+
+        graph_rows = np.concatenate((rows, cols))
+        graph_cols = np.concatenate((cols, rows))
+        data = np.ones(len(graph_rows), dtype=bool)
+        graph = sparse.coo_matrix((data, (graph_rows, graph_cols)), shape=(node_count, node_count)).tocsr()
+        _, labels = connected_components(graph, directed=False, return_labels=True)
+        return labels.astype(np.int64, copy=False)
+    except ImportError:
+        parent = np.arange(node_count, dtype=np.int64)
+        rank = np.zeros(node_count, dtype=np.uint8)
+
+        def find(node):
+            while parent[node] != node:
+                parent[node] = parent[parent[node]]
+                node = parent[node]
+            return node
+
+        for row, col in zip(rows, cols):
+            root_row = find(int(row))
+            root_col = find(int(col))
+            if root_row == root_col:
+                continue
+            if rank[root_row] < rank[root_col]:
+                parent[root_row] = root_col
+            elif rank[root_row] > rank[root_col]:
+                parent[root_col] = root_row
+            else:
+                parent[root_col] = root_row
+                rank[root_row] += 1
+
+        return np.array([find(idx) for idx in range(node_count)], dtype=np.int64)
+
+
 def build_black_face_components(mesh, black_face_mask):
     black_indices = np.flatnonzero(black_face_mask)
     if len(black_indices) == 0:
         return []
 
-    neighbors = {int(idx): [] for idx in black_indices}
-    for face_a, face_b in np.asarray(mesh.face_adjacency, dtype=np.int64):
-        if black_face_mask[face_a] and black_face_mask[face_b]:
-            neighbors[int(face_a)].append(int(face_b))
-            neighbors[int(face_b)].append(int(face_a))
+    rows, cols = build_black_face_edge_pairs(mesh, black_indices)
+    labels = connected_components_from_pairs(len(black_indices), rows, cols)
+    order = np.argsort(labels, kind="stable")
+    sorted_labels = labels[order]
+    component_breaks = np.flatnonzero(sorted_labels[1:] != sorted_labels[:-1]) + 1
+    component_starts = np.concatenate(([0], component_breaks))
+    component_ends = np.concatenate((component_breaks, [len(sorted_labels)]))
+    return [black_indices[order[start:end]] for start, end in zip(component_starts, component_ends)]
 
-    components = []
-    remaining = set(int(idx) for idx in black_indices)
-    while remaining:
-        start = remaining.pop()
-        stack = [start]
-        component = [start]
-        while stack:
-            current = stack.pop()
-            for neighbor in neighbors[current]:
-                if neighbor in remaining:
-                    remaining.remove(neighbor)
-                    stack.append(neighbor)
-                    component.append(neighbor)
-        components.append(np.array(component, dtype=np.int64))
-    return components
+
+def get_face_center_bounds(mesh, face_indices, chunk_size=1000000):
+    vertices = np.asarray(mesh.vertices)
+    faces = np.asarray(mesh.faces, dtype=np.int64)
+    bounds_min = np.full(3, np.inf, dtype=np.float64)
+    bounds_max = np.full(3, -np.inf, dtype=np.float64)
+
+    for start in range(0, len(face_indices), chunk_size):
+        chunk_indices = face_indices[start:start + chunk_size]
+        centers = vertices[faces[chunk_indices]].mean(axis=1)
+        bounds_min = np.minimum(bounds_min, centers.min(axis=0))
+        bounds_max = np.maximum(bounds_max, centers.max(axis=0))
+
+    return bounds_min, bounds_max
 
 
 def filter_black_components(
@@ -99,7 +188,7 @@ def filter_black_components(
                 and component_area >= float(min_black_component_area)
             )
         )
-        component_bounds = mesh.triangles_center[face_indices]
+        bounds_min, bounds_max = get_face_center_bounds(mesh, face_indices)
         stat = dict(
             index=idx,
             face_count=int(len(face_indices)),
@@ -107,8 +196,8 @@ def filter_black_components(
             area_ratio=area_ratio,
             mean_rgb=component_rgb.mean(axis=0).round(3).tolist(),
             max_rgb=component_rgb.max(axis=0).round(3).tolist(),
-            bounds_min=component_bounds.min(axis=0).round(6).tolist(),
-            bounds_max=component_bounds.max(axis=0).round(6).tolist(),
+            bounds_min=bounds_min.round(6).tolist(),
+            bounds_max=bounds_max.round(6).tolist(),
             removed=bool(remove),
         )
         component_stats.append(stat)
@@ -128,12 +217,19 @@ def build_clean_mesh(mesh, remove_faces):
     return cleaned
 
 
+def get_mesh_component_count(mesh, compute_component_counts):
+    if not compute_component_counts:
+        return None
+    return int(len(mesh.split(only_watertight=False)))
+
+
 def cleanup_mesh(
     mesh,
     black_rgb_threshold=16,
     min_black_component_faces=2000,
     min_black_component_area_ratio=0.015,
     min_black_component_area=0.0,
+    compute_component_counts=True,
 ):
     face_rgb = get_face_rgb(mesh)
     black_face_mask = get_black_face_mask(face_rgb, black_rgb_threshold)
@@ -173,7 +269,7 @@ def cleanup_mesh(
         original=dict(
             verts=int(len(mesh.vertices)),
             faces=int(len(mesh.faces)),
-            components=int(len(mesh.split(only_watertight=False))),
+            components=get_mesh_component_count(mesh, compute_component_counts),
             area=total_area,
             bounds=mesh.bounds.tolist(),
             has_vertex_colors=get_vertex_colors(mesh) is not None,
@@ -181,7 +277,7 @@ def cleanup_mesh(
         final=dict(
             verts=int(len(cleaned.vertices)),
             faces=int(len(cleaned.faces)),
-            components=int(len(cleaned.split(only_watertight=False))),
+            components=get_mesh_component_count(cleaned, compute_component_counts),
             area=float(cleaned.area_faces.sum()) if len(cleaned.faces) else 0.0,
             bounds=cleaned.bounds.tolist() if len(cleaned.vertices) else None,
             has_vertex_colors=get_vertex_colors(cleaned) is not None,

@@ -69,6 +69,11 @@ def parse_args():
         default=0.0,
         help="Optional absolute surface-area threshold for removing a black region. Use 0 to disable.",
     )
+    parser.add_argument(
+        "--skip_component_counts",
+        action="store_true",
+        help="Skip expensive full-mesh connected component counts in the JSON summary.",
+    )
     return parser.parse_args()
 
 
@@ -117,6 +122,7 @@ def main():
         min_black_component_faces=args.min_black_component_faces,
         min_black_component_area_ratio=args.min_black_component_area_ratio,
         min_black_component_area=args.min_black_component_area,
+        compute_component_counts=not args.skip_component_counts,
     )
 
     print(f"Source mesh: {mesh_path}")
