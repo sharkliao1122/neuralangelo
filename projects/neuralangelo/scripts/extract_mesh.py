@@ -42,43 +42,20 @@ def parse_args():
     parser.add_argument("--keep_lcc", action="store_true",
                         help="Keep only largest connected component. May remove thin structures.")
     parser.add_argument("--clean_mesh", action="store_true",
-                        help="Run chair-oriented mesh cleanup after exporting the raw mesh. "
-                             "By default this writes only the raw mesh, the cleaned mesh, "
-                             "and the cleaned summary JSON.")
-    parser.add_argument("--clean_transforms", default=None,
-                        help="Optional transforms.json override for cleanup. Defaults to cfg.data.root/transforms.json.")
+                        help="Remove large connected black regions after exporting the raw mesh. "
+                             "The raw mesh is preserved and the cleaned mesh is written separately.")
     parser.add_argument("--clean_output_file", default=None,
                         help="Optional output path for the cleaned mesh. Defaults to *_cleaned next to output_file.")
     parser.add_argument("--clean_summary_json", default=None,
                         help="Optional summary JSON path for cleanup output.")
-    parser.add_argument("--clean_frame_sample_count", type=int, default=24,
-                        help="Number of RGBA frames used for cleanup support checks. Use <= 0 for all frames.")
-    parser.add_argument("--clean_min_valid_views", type=int, default=3,
-                        help="Minimum projected views required before a vertex support score is trusted.")
-    parser.add_argument("--clean_min_face_support", type=float, default=0.28,
-                        help="Base average vertex support required to keep a face.")
-    parser.add_argument("--clean_low_z_threshold", type=float, default=-0.40,
-                        help="Normalized z threshold below which stricter face filtering is applied.")
-    parser.add_argument("--clean_low_z_support", type=float, default=0.40,
-                        help="Required average face support below clean_low_z_threshold.")
-    parser.add_argument("--clean_min_component_faces", type=int, default=1200,
-                        help="Directly keep components above this face count if they also have strong support.")
-    parser.add_argument("--clean_min_component_support", type=float, default=0.45,
-                        help="Directly keep large components above this support.")
-    parser.add_argument("--clean_near_component_faces", type=int, default=250,
-                        help="Minimum face count for smaller components that are close to the anchor component.")
-    parser.add_argument("--clean_near_component_support", type=float, default=0.28,
-                        help="Minimum support for smaller components that are close to the anchor component.")
-    parser.add_argument("--clean_near_distance", type=float, default=0.22,
-                        help="Maximum normalized bbox gap for a smaller component to be retained near the anchor.")
-    parser.add_argument("--clean_bottom_z_margin", type=float, default=0.06,
-                        help="Remove components whose top is this far below the anchor bottom.")
-    parser.add_argument("--clean_bottom_gap", type=float, default=0.10,
-                        help="Maximum XY bbox gap for a low component to be treated as under the anchor.")
-    parser.add_argument("--clean_write_intermediate", action="store_true",
-                        help="Also export the face-filtered intermediate mesh. "
-                             "Without this flag, clean_mesh keeps output to the raw mesh, "
-                             "cleaned mesh, and cleaned summary JSON only.")
+    parser.add_argument("--clean_black_rgb_threshold", type=int, default=16,
+                        help="Conservative black threshold. Faces are black only when all average RGB channels are <= this value.")
+    parser.add_argument("--clean_min_black_component_faces", type=int, default=2000,
+                        help="Minimum connected black-face count required to remove a region.")
+    parser.add_argument("--clean_min_black_component_area_ratio", type=float, default=0.015,
+                        help="Minimum mesh area ratio required to remove a black region.")
+    parser.add_argument("--clean_min_black_component_area", type=float, default=0.0,
+                        help="Optional absolute surface-area threshold for removing a black region. Use 0 to disable.")
     args, cfg_cmd = parser.parse_known_args()
     return args, cfg_cmd
 
@@ -152,30 +129,18 @@ def main():
         print(f"Saved raw mesh to {args.output_file}")
 
         if args.clean_mesh:
-            clean_transforms = args.clean_transforms or meta_fname
             clean_output_file = get_clean_output_path(args.output_file, args.clean_output_file)
-            _, summary, face_filtered_path, summary_path = export_cleanup_outputs(
+            _, summary, summary_path = export_cleanup_outputs(
                 mesh.copy(),
-                clean_transforms,
                 clean_output_file,
                 summary_json=args.clean_summary_json,
-                write_face_filtered=args.clean_write_intermediate,
-                frame_sample_count=args.clean_frame_sample_count,
-                min_valid_views=args.clean_min_valid_views,
-                min_face_support=args.clean_min_face_support,
-                low_z_threshold=args.clean_low_z_threshold,
-                low_z_support=args.clean_low_z_support,
-                min_component_faces=args.clean_min_component_faces,
-                min_component_support=args.clean_min_component_support,
-                near_component_faces=args.clean_near_component_faces,
-                near_component_support=args.clean_near_component_support,
-                near_distance=args.clean_near_distance,
-                bottom_z_margin=args.clean_bottom_z_margin,
-                bottom_gap=args.clean_bottom_gap,
+                input_mesh_path=args.output_file,
+                black_rgb_threshold=args.clean_black_rgb_threshold,
+                min_black_component_faces=args.clean_min_black_component_faces,
+                min_black_component_area_ratio=args.clean_min_black_component_area_ratio,
+                min_black_component_area=args.clean_min_black_component_area,
             )
             print(f"Saved cleaned mesh to {clean_output_file}")
-            if face_filtered_path:
-                print(f"Saved face-filtered mesh to {face_filtered_path}")
             print(f"Saved cleanup summary to {summary_path}")
             print(
                 "Cleaned mesh:",
