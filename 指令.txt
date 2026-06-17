@@ -1,59 +1,69 @@
+--------------------------- DATA_PREPARE ----------------------------
+
+copy "%DATA_PATH%\sparse\0\*.bin" "%DATA_PATH%\sparse\"
+
+COLMAP.bat image_undistorter ^
+  --image_path "%DATA_PATH%\images_raw" ^
+  --input_path "%DATA_PATH%\sparse\0" ^
+  --output_path "%DATA_PATH%" ^
+  --output_type COLMAP
+
+python projects\neuralangelo\scripts\convert_data_to_json.py ^
+  --data_dir "%DATA_PATH%" ^
+  --scene_type object
+
+python projects\neuralangelo\scripts\generate_config.py ^
+  --sequence_name %SEQUENCE% ^
+  --data_dir "%DATA_PATH%" ^
+  --scene_type object
+
+
+--------------------------- training ----------------------------
+
 conda activate neuralangelo_5080
 cd /d C:\research\neuralangelo_test
-
---------------------------- training ----------------------------
-
 python train.py ^
+  --config=projects\neuralangelo\configs\custom\kengdong_20260613.yaml ^
+  --logdir=C:\research\neuralangelo_test\outputs\kengdong_20260613 ^
   --single_gpu ^
-  --config C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\DnC_box.yaml ^
-  --logdir C:\research\neuralangelo_test\logs\box_0531_smoke_stable ^
-  --resume ^
   --show_pbar ^
   --total_time ^
-  --max_iter=200000 ^
-  --logging_iter=100 ^
-  --validation_iter=20000 ^
-  --checkpoint.save_iter=20000 ^
-  --checkpoint.save_latest_iter=20000 ^
-  --data.train.batch_size=1 ^
-  --data.val.batch_size=1 ^
-  --data.val.subset=1 ^
-  --data.val.image_size=[240,320] ^
-  --data.num_workers=0 ^
-  --data.preload=false ^
-  --optim.params.lr=1e-4 ^
+  --record_command ^
+  --plot_loss_curve ^
+  --trainer.amp_config.enabled ^
+  --max_iter=500000 ^
+  --validation_iter=250000 ^
+  --checkpoint.save_iter=100000 ^
+  --optim.params.lr=5e-4 ^
   --trainer.loss_weight.curvature=0.0 ^
-  --model.background.enabled=false ^
-  --model.appear_embed.enabled=false ^
+  --model.background.enabled! ^
+  --model.render.num_samples.background=0 ^
+  --model.appear_embed.enabled! ^
   --model.render.rand_rays=256 ^
-  --model.render.num_sample_hierarchy=2
+  --data.preload! ^
+  --data.persistent_workers! ^
+  --data.use_multi_epoch_loader! ^
+  --data.train.image_size=[480,640] ^
+  --data.val.image_size=[300,400]
+ 
 
---------------------------- extract mesh ----------------------------
+--------------------------- extract_mesh ----------------------------
 
-set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 python projects\neuralangelo\scripts\extract_mesh.py ^
+  --config=C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_better\config.yaml ^
+  --checkpoint=C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_better\epoch_10000_iteration_000500000_checkpoint.pt ^
   --single_gpu ^
-  --config C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\chair_from_nerf2mesh.yaml ^
-  --checkpoint C:\research\neuralangelo_test\logs\chair\chair_from_nerf2mesh_fast_safe\epoch_10000_iteration_000500000_checkpoint.pt ^
-  --output_file C:\research\neuralangelo_test\logs\chair\chair_from_nerf2mesh_fast_safe\mesh_500k_official_textured.ply ^
-  --resolution 1024 ^
-  --block_res 128 ^
-  --textured ^
-  --texture_chunk_size 16384 ^
-  --keep_lcc ^
-  --clean_mesh ^
-  --clean_bottom_z_margin 0.06 ^
-  --clean_bottom_gap 0.10
+  --resolution=2048 ^
+  --block_res=64 ^
+  --texture_chunk_size=16384 ^
+  --output_file=C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_better\mesh_res_2048_texture.ply
+--textured ^
 
---------------------------- training ----------------------------
-set CONFIG=projects\neuralangelo\configs\custom\chair_from_nerf2mesh.yaml
-set GROUP=chair
-set NAME=chair_from_nerf2mesh_official
+--------------------------- MESH CLEAN ----------------------------
 
-python train.py ^
-  --single_gpu ^
-  --logdir=logs/%GROUP%/%NAME% ^
-  --config=%CONFIG% ^
-  --show_pbar ^
-  --total_time
+python projects\neuralangelo\scripts\postprocess_mesh_support.py ^
+  --mesh "C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_official\mesh_res_2048_texture.ply" ^
+  --black_rgb_threshold 16 ^
+  --min_black_component_faces 2000 ^
+  --min_black_component_area_ratio 0.015
 
