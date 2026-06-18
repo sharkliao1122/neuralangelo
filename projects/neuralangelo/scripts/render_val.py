@@ -23,12 +23,14 @@ from imaginaire.trainers.utils.get_trainer import get_trainer  # noqa: E402
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Render validation outputs to videos")
+    parser = argparse.ArgumentParser(description="Render validation outputs to videos or PNG frames")
     parser.add_argument("--config", required=True, help="Path to the config file.")
     parser.add_argument("--checkpoint", required=True, help="Checkpoint path.")
     parser.add_argument("--output_dir", required=True, help="Directory to store rendered videos.")
     parser.add_argument('--local_rank', type=int, default=os.getenv('LOCAL_RANK', 0))
     parser.add_argument('--single_gpu', action='store_true')
+    parser.add_argument("--save_frames_only", action="store_true",
+                        help="Save PNG frames under <output_dir>/frames instead of MP4 videos.")
     parser.add_argument("--subset", type=int, default=None,
                         help="Optional number of validation frames to render. Use 0 or a negative value for all.")
     args, cfg_cmd = parser.parse_known_args()
@@ -68,8 +70,11 @@ def main():
     data_all = trainer.test(trainer.eval_data_loader, mode="val", show_pbar=True)
     if is_master():
         os.makedirs(args.output_dir, exist_ok=True)
-        trainer.dump_test_results(data_all, args.output_dir)
-        print(f"Saved render videos to {args.output_dir}")
+        trainer.dump_test_results(data_all, args.output_dir, save_frames_only=args.save_frames_only)
+        if args.save_frames_only:
+            print(f"Saved render frames to {args.output_dir}")
+        else:
+            print(f"Saved render videos to {args.output_dir}")
 
 
 if __name__ == "__main__":

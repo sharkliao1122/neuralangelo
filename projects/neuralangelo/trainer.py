@@ -12,6 +12,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 import os
 
+import numpy as np
 import torch
 import torch.nn.functional as torch_F
 import wandb
@@ -22,6 +23,10 @@ from imaginaire.utils.distributed import master_only
 from imaginaire.utils.visualization import wandb_image, preprocess_image
 from projects.nerf.trainers.base import BaseTrainer
 from projects.neuralangelo.utils.misc import get_scheduler, eikonal_loss, curvature_loss
+
+# NumPy 2 removed deprecated aliases that older skvideo still imports internally.
+if not hasattr(np, "int"):
+    np.int = int
 
 
 class Trainer(BaseTrainer):
@@ -109,7 +114,7 @@ class Trainer(BaseTrainer):
             })
         wandb.log(images, step=self.current_iteration)
 
-    def dump_test_results(self, data_all, output_dir):
+    def dump_test_results(self, data_all, output_dir, save_frames_only=False):
         results = dict(
             rgb_target=preprocess_image(data_all["image"]),
             rgb_render=preprocess_image(data_all["rgb_map"]),
@@ -118,6 +123,9 @@ class Trainer(BaseTrainer):
             inv_depth=preprocess_image(1 / (data_all["depth_map"] + 1e-8) * self.cfg.trainer.depth_vis_scale),
             opacity=preprocess_image(data_all["opacity_map"]),
         )
+        if save_frames_only:
+            self._dump_test_frames(results, output_dir)
+            return
         inputdict, outputdict = self._get_ffmpeg_dicts()
         try:
             for key, image_list in results.items():
