@@ -1,7 +1,5 @@
 --------------------------- training ----------------------------
 
-conda activate neuralangelo_5080
-cd /d C:\research\neuralangelo_test
 python train.py ^
   --config="C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\kengdong_20260613.yaml" ^
   --logdir=C:\research\neuralangelo_test\outputs\kengdong_20260613_2 ^
@@ -12,18 +10,19 @@ python train.py ^
   --plot_loss_curve ^
   --trainer.amp_config.enabled ^
   --max_iter=400000 ^
-  --validation_iter=250000 ^
+  --validation_iter=200000 ^
   --checkpoint.save_iter=100000 ^
   --optim.params.lr=5e-4 ^
   --trainer.loss_weight.curvature=0.0 ^
-  --model.background.enabled! ^
-  --model.render.num_samples.background=0 ^
-  --model.appear_embed.enabled! ^
   --model.render.rand_rays=256 ^
   --data.preload! ^
   --data.use_multi_epoch_loader! ^
   --data.train.image_size=[480,640] ^
-  --data.val.image_size=[300,400]
+  --data.val.image_size=[300,400] ^
+  --render_val_after_train ^
+  --render_val_subset=8 ^
+  --render_val_save_frames_only ^
+  --render_val_output_dir=C:\research\neuralangelo_test\outputs\kengdong_20260613_2\renders_final_png
 
 --------------------------- extract_mesh ----------------------------
 
