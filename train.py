@@ -44,11 +44,37 @@ def parse_args():
                         help='Record this training command to the log directory.')
     parser.add_argument('--plot_loss_curve', action='store_true',
                         help='Plot loss curves from the local loss history after training finishes.')
+    parser.add_argument('--render_val_after_train', action='store_true',
+                        help='Render validation outputs after training finishes.')
+    parser.add_argument('--render_val_subset', type=int, default=None,
+                        help='Optional number of validation frames to render after training. Use 0 or a negative value for all.')
+    parser.add_argument('--render_val_output_dir', default=None,
+                        help='Optional output directory for post-training renders. Defaults to <logdir>/renders_final.')
+    parser.add_argument('--render_val_save_frames_only', action='store_true',
+                        help='Save PNG frames instead of MP4 videos for post-training renders.')
     parser.add_argument('--wandb', action='store_true', help="Enable using Weights & Biases as the logger")
     parser.add_argument('--wandb_name', default='default', type=str)
     parser.add_argument('--resume', action='store_true')
     args, cfg_cmd = parser.parse_known_args()
     return args, cfg_cmd
+
+
+def render_validation_outputs(trainer, cfg, args):
+    if args.render_val_subset is not None:
+        cfg.data.val.subset = None if args.render_val_subset <= 0 else args.render_val_subset
+        trainer.set_data_loader(cfg, split="val")
+
+    output_dir = args.render_val_output_dir or os.path.join(cfg.logdir, "renders_final")
+    os.makedirs(output_dir, exist_ok=True)
+    data_all = trainer.test(trainer.eval_data_loader, mode="val", show_pbar=args.show_pbar)
+    if is_master():
+        trainer.dump_test_results(
+            data_all,
+            output_dir,
+            save_frames_only=args.render_val_save_frames_only,
+        )
+        render_type = "frames" if args.render_val_save_frames_only else "videos"
+        print(f"Saved post-training validation render {render_type} to {output_dir}")
 
 
 def main():
@@ -122,6 +148,9 @@ def main():
         show_pbar=args.show_pbar,
         output_path=os.path.join(cfg.logdir, "total_time.txt"),
     )
+
+    if args.render_val_after_train:
+        render_validation_outputs(trainer, cfg, args)
 
     # Finalize training.
     trainer.finalize(cfg)

@@ -1,37 +1,17 @@
---------------------------- DATA_PREPARE ----------------------------
-
-copy "%DATA_PATH%\sparse\0\*.bin" "%DATA_PATH%\sparse\"
-
-COLMAP.bat image_undistorter ^
-  --image_path "%DATA_PATH%\images_raw" ^
-  --input_path "%DATA_PATH%\sparse\0" ^
-  --output_path "%DATA_PATH%" ^
-  --output_type COLMAP
-
-python projects\neuralangelo\scripts\convert_data_to_json.py ^
-  --data_dir "%DATA_PATH%" ^
-  --scene_type object
-
-python projects\neuralangelo\scripts\generate_config.py ^
-  --sequence_name %SEQUENCE% ^
-  --data_dir "%DATA_PATH%" ^
-  --scene_type object
-
-
 --------------------------- training ----------------------------
 
 conda activate neuralangelo_5080
 cd /d C:\research\neuralangelo_test
 python train.py ^
-  --config=projects\neuralangelo\configs\custom\kengdong_20260613.yaml ^
-  --logdir=C:\research\neuralangelo_test\outputs\kengdong_20260613 ^
+  --config="C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\kengdong_20260613.yaml" ^
+  --logdir=C:\research\neuralangelo_test\outputs\kengdong_20260613_2 ^
   --single_gpu ^
   --show_pbar ^
   --total_time ^
   --record_command ^
   --plot_loss_curve ^
   --trainer.amp_config.enabled ^
-  --max_iter=500000 ^
+  --max_iter=400000 ^
   --validation_iter=250000 ^
   --checkpoint.save_iter=100000 ^
   --optim.params.lr=5e-4 ^
@@ -41,23 +21,22 @@ python train.py ^
   --model.appear_embed.enabled! ^
   --model.render.rand_rays=256 ^
   --data.preload! ^
-  --data.persistent_workers! ^
   --data.use_multi_epoch_loader! ^
   --data.train.image_size=[480,640] ^
   --data.val.image_size=[300,400]
- 
 
 --------------------------- extract_mesh ----------------------------
 
 python projects\neuralangelo\scripts\extract_mesh.py ^
-  --config=C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_better\config.yaml ^
-  --checkpoint=C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_better\epoch_10000_iteration_000500000_checkpoint.pt ^
+  --config=C:\research\neuralangelo_test\outputs\kengdong_20260613\config.yaml ^
+  --checkpoint=C:\research\neuralangelo_test\outputs\kengdong_20260613\epoch_01048_iteration_000500000_checkpoint.pt^
   --single_gpu ^
   --resolution=2048 ^
   --block_res=64 ^
   --texture_chunk_size=16384 ^
-  --output_file=C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_better\mesh_res_2048_texture.ply
---textured ^
+  --textured ^
+  --output_file=C:\research\neuralangelo_test\outputs\kengdong_20260613\mesh_res_2048_texture.ply
+
 
 --------------------------- MESH CLEAN ----------------------------
 
@@ -67,3 +46,13 @@ python projects\neuralangelo\scripts\postprocess_mesh_support.py ^
   --min_black_component_faces 2000 ^
   --min_black_component_area_ratio 0.015
 
+
+--------------------------- MESH CLEAN ----------------------------
+
+python projects\neuralangelo\scripts\render_val.py ^
+  --config="C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_official\config.yaml" ^
+  --checkpoint="C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_official\epoch_10000_iteration_000500000_checkpoint.pt"^
+  --output_dir="C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_official\renders_500k_subset8_png" ^
+  --subset=8 ^
+  --single_gpu ^
+  --save_frames_only
