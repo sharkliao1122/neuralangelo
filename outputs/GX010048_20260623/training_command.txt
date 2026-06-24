@@ -1,0 +1,10 @@
+[2026-06-23T18:04:04]
+cwd: C:\research\neuralangelo_test
+command: train.py --config=C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\GX010048.yaml --logdir=C:\research\neuralangelo_test\outputs\GX010048_20260623 --single_gpu --show_pbar --total_time --record_command --plot_loss_curve --trainer.amp_config.enabled --max_iter=400000 --validation_iter=200000 --checkpoint.save_iter=100000 --optim.params.lr=5e-4 --trainer.loss_weight.curvature=0.0 --model.render.rand_rays=256 --data.preload! --data.use_multi_epoch_loader! --data.train.image_size=[480,640] --data.val.image_size=[300,400] --render_val_after_train --render_val_subset=8 --render_val_save_frames_only --render_val_output_dir=C:\research\neuralangelo_test\outputs\GX010048_20260623\renders_final_png
+metadata: {"checkpoint": null, "config": "C:\\research\\neuralangelo_test\\projects\\neuralangelo\\configs\\custom\\GX010048.yaml", "logdir": "C:\\research\\neuralangelo_test\\outputs\\GX010048_20260623", "resume": false, "seed": 0}
+
+[2026-06-23T18:07:27]
+cwd: C:\research\neuralangelo_test
+command: train.py --config C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\GX010048.yaml --logdir C:\research\neuralangelo_test\outputs\GX010048_20260623 --single_gpu --show_pbar --total_time --record_command --plot_loss_curve --trainer.amp_config.enabled --max_iter=400000 --validation_iter=200000 --checkpoint.save_iter=100000 --optim.params.lr=5e-4 --trainer.loss_weight.curvature=0.0 --model.render.rand_rays=256 --data.preload! --data.num_workers=0 --data.use_multi_epoch_loader! --data.train.image_size=[360,640] --data.val.image_size=[300,533] --render_val_after_train --render_val_subset=8 --render_val_save_frames_only --render_val_output_dir C:\research\neuralangelo_test\outputs\GX010048_20260623\renders_final_png
+metadata: {"checkpoint": null, "config": "C:\\research\\neuralangelo_test\\projects\\neuralangelo\\configs\\custom\\GX010048.yaml", "logdir": "C:\\research\\neuralangelo_test\\outputs\\GX010048_20260623", "resume": false, "seed": 0}
+
