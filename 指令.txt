@@ -46,7 +46,7 @@ python projects\neuralangelo\scripts\postprocess_mesh_support.py ^
   --min_black_component_area_ratio 0.015
 
 
---------------------------- MESH CLEAN ----------------------------
+--------------------------- RENDER ----------------------------
 
 python projects\neuralangelo\scripts\render_val.py ^
   --config="C:\research\neuralangelo_test\outputs\chair\chair_from_nerf2mesh_official\config.yaml" ^

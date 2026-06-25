@@ -1,0 +1,68 @@
+--------------------------- DATA PREPARE ----------------------------
+
+set "SEQUENCE=20260625_nonsmooth"
+set "DOWNSAMPLE_RATE=10"
+set "DATA_PATH=datasets\%SEQUENCE%_ds%DOWNSAMPLE_RATE%"
+set "IMAGE_RAW=%DATA_PATH%\images_raw"
+set "VIDEO=C:\Users\USER\OneDrive\桌面\DATASET\20260625_nonsmooth.MP4"
+mkdir "%DATA_PATH%"
+mkdir "%IMAGE_RAW%"
+
+--------------------------- 從影片抽照片 ----------------------------
+
+ffmpeg -i "%VIDEO%" -vf "select=not(mod(n\,%DOWNSAMPLE_RATE%))" -vsync vfr -q:v 2 "%IMAGE_RAW%\%06d.jpg"
+
+--------------------------- 跑 COLMAP ----------------------------
+
+call "%COLMAP%" feature_extractor ^
+  --database_path "%DATA_PATH%\database.db" ^
+  --image_path "%DATA_PATH%\images_raw" ^
+  --ImageReader.camera_model SIMPLE_RADIAL ^
+  --ImageReader.single_camera 1 ^
+  --FeatureExtraction.use_gpu 1 ^
+  --FeatureExtraction.num_threads 32
+
+call "%COLMAP%" sequential_matcher ^
+  --database_path "%DATA_PATH%\database.db" ^
+  --FeatureMatching.use_gpu 1
+
+mkdir "%DATA_PATH%\sparse"
+
+call "%COLMAP%" mapper ^
+  --database_path "%DATA_PATH%\database.db" ^
+  --image_path "%DATA_PATH%\images_raw" ^
+  --output_path "%DATA_PATH%\sparse"
+
+--------------------------- images ----------------------------
+
+copy "%DATA_PATH%\sparse\0\*.bin" "%DATA_PATH%\sparse\" /Y
+
+call "%COLMAP%" image_undistorter ^
+  --image_path "%DATA_PATH%\images_raw" ^
+  --input_path "%DATA_PATH%\sparse" ^
+  --output_path "%DATA_PATH%" ^
+  --output_type COLMAP
+
+
+--------------------------- transforms.json ----------------------------
+
+python projects\neuralangelo\scripts\convert_data_to_json.py ^
+  --data_dir "%DATA_PATH%" ^
+  --scene_type outdoor
+
+python projects\neuralangelo\scripts\generate_config.py ^
+  --sequence_name %SEQUENCE% ^
+  --data_dir "%DATA_PATH%" ^
+  --scene_type outdoor ^
+  --auto_exposure_wb
+
+--------------------------- check ----------------------------
+
+dir "%DATA_PATH%\images"
+dir "%DATA_PATH%\transforms.json"
+dir "projects\neuralangelo\configs\custom\%SEQUENCE%.yaml"
+
+
+
+
+

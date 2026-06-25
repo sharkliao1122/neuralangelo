@@ -9,7 +9,6 @@ checkpoints
 *.ipynb
 *.DS_Store
 *.pyc
-*.json
 *.yaml
 # Credential information that should never be checked in
 *.secret
