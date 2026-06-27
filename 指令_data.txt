@@ -64,5 +64,7 @@ dir "projects\neuralangelo\configs\custom\%SEQUENCE%.yaml"
 
 
 
+python -m pip install addict
+
 
 
