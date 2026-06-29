@@ -1,1 +1,0 @@
-epoch_00588_iteration_000100000_checkpoint.pt
