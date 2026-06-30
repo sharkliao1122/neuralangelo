@@ -1,8 +1,8 @@
 @echo off
 
 REM Only change these 3 lines each time.
-set "SEQUENCE=GX010051"
-set "DOWNSAMPLE_RATE=10"
+set "SEQUENCE=20260625_nonsmooth"
+set "DOWNSAMPLE_RATE=4"
 set "VIDEO=D:\DCIM\100GOPRO\GX010051.MP4"
 
 REM Usually no need to change below this line.
@@ -59,7 +59,3 @@ call "%COLMAP%" image_undistorter ^
   --scene_type %SCENE_TYPE% ^
   --val_short_size %VAL_SHORT_SIZE% ^
   --auto_exposure_wb
-
-dir "%DATA_PATH%\images"
-dir "%DATA_PATH%\transforms.json"
-dir "%CONFIG_PATH%"
