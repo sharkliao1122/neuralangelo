@@ -1,11 +1,11 @@
-@echo off
+conda activate neuralangelo_5080
+cd /d C:\research\neuralangelo_test
 
-REM Only change these 3 lines each time.
+@echo off
 set "SEQUENCE=20260625_nonsmooth"
 set "DOWNSAMPLE_RATE=4"
-set "VIDEO=D:\DCIM\100GOPRO\GX010051.MP4"
+set "VIDEO=C:\research\data_mp4\GX010051.MP4"
 
-REM Usually no need to change below this line.
 set "SCENE_TYPE=outdoor"
 set "VAL_SHORT_SIZE=300"
 set "WORK_ROOT=C:\research\neuralangelo_test"
@@ -59,3 +59,4 @@ call "%COLMAP%" image_undistorter ^
   --scene_type %SCENE_TYPE% ^
   --val_short_size %VAL_SHORT_SIZE% ^
   --auto_exposure_wb
+

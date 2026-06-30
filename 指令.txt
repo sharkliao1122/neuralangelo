@@ -1,8 +1,11 @@
+conda activate neuralangelo_5080
+cd /d C:\research\neuralangelo_test
+
 --------------------------- training ----------------------------
 
 python train.py ^
-  --config=C:\research\neuralangelo_test\projects/neuralangelo/configs\custom/20260625_nonsmooth_ds10.yaml ^
-  --logdir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds10 ^
+  --config=C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\20260625_nonsmooth_ds4.yaml ^
+  --logdir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4 ^
   --single_gpu ^
   --show_pbar ^
   --total_time ^
@@ -23,7 +26,7 @@ python train.py ^
   --render_val_after_train ^
   --render_val_subset=10 ^
   --render_val_save_frames_only ^
-  --render_val_output_dir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds10\renders_final_png
+  --render_val_output_dir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4\renders_final_png
 
 --------------------------- extract_mesh ----------------------------
 
@@ -59,7 +62,7 @@ C:\research\neuralangelo_test\projects\neuralangelo\scripts\render_val.py ^
 --subset=8
 
 
-python train.py ^
+ python train.py ^
   --config=C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\20260625_nonsmooth_ds10.yaml ^
   --logdir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds10_nan_safe ^
   --single_gpu ^
