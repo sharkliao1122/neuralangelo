@@ -337,17 +337,17 @@ def create_canvas(image_a, image_b, layout: str, image_gap: int, title_a: str | 
     height_a, width_a = image_a.shape[:2]
     height_b, width_b = image_b.shape[:2]
     title_height = 28
-    band_a = title_height if title_a else 0
-    band_b = title_height if title_b else 0
 
     if layout == "vertical":
-        canvas_height = band_a + height_a + image_gap + band_b + height_b
+        middle_titles = [text for text in (title_a, title_b) if text]
+        middle_band = title_height * len(middle_titles)
+        canvas_height = height_a + middle_band + image_gap + height_b
         canvas_width = max(width_a, width_b)
-        offset_a = ((canvas_width - width_a) // 2, band_a)
-        offset_b = ((canvas_width - width_b) // 2, band_a + height_a + image_gap + band_b)
-        title_pos_a = (0, 0, canvas_width)
-        title_pos_b = (0, band_a + height_a + image_gap, canvas_width)
+        offset_a = ((canvas_width - width_a) // 2, 0)
+        offset_b = ((canvas_width - width_b) // 2, height_a + middle_band + image_gap)
     elif layout == "horizontal":
+        band_a = title_height if title_a else 0
+        band_b = title_height if title_b else 0
         canvas_height = max(band_a + height_a, band_b + height_b)
         canvas_width = width_a + image_gap + width_b
         offset_a = (0, band_a)
@@ -358,10 +358,14 @@ def create_canvas(image_a, image_b, layout: str, image_gap: int, title_a: str | 
         raise ValueError(f"Unsupported layout: {layout}")
 
     canvas = np.full((canvas_height, canvas_width, 3), 255, dtype=np.uint8)
-    if title_a:
-        draw_title_band(canvas, title_a, title_pos_a[0], title_pos_a[1], title_pos_a[2], title_height)
-    if title_b:
-        draw_title_band(canvas, title_b, title_pos_b[0], title_pos_b[1], title_pos_b[2], title_height)
+    if layout == "vertical":
+        for line_index, text in enumerate(middle_titles):
+            draw_title_band(canvas, text, 0, height_a + (line_index * title_height), canvas_width, title_height)
+    else:
+        if title_a:
+            draw_title_band(canvas, title_a, title_pos_a[0], title_pos_a[1], title_pos_a[2], title_height)
+        if title_b:
+            draw_title_band(canvas, title_b, title_pos_b[0], title_pos_b[1], title_pos_b[2], title_height)
     canvas[offset_a[1]:offset_a[1] + height_a, offset_a[0]:offset_a[0] + width_a] = cv2.cvtColor(image_a, cv2.COLOR_GRAY2BGR)
     canvas[offset_b[1]:offset_b[1] + height_b, offset_b[0]:offset_b[0] + width_b] = cv2.cvtColor(image_b, cv2.COLOR_GRAY2BGR)
     return canvas, offset_a, offset_b
