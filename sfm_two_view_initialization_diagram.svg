@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#334155"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; }
+      .image { fill: #e0f2fe; stroke: #0284c7; stroke-width: 4; }
+      .image2 { fill: #dcfce7; stroke: #16a34a; stroke-width: 4; }
+      .camera { fill: #111827; }
+      .ray1 { stroke: #2563eb; stroke-width: 5; stroke-dasharray: 12 10; fill: none; }
+      .ray2 { stroke: #16a34a; stroke-width: 5; stroke-dasharray: 12 10; fill: none; }
+      .axis { stroke: #334155; stroke-width: 4; marker-end: url(#arrow-gray); }
+      .motion { stroke: #7c3aed; stroke-width: 5; fill: none; marker-end: url(#arrow-blue); }
+      .point { fill: #ef4444; stroke: #991b1b; stroke-width: 4; }
+      .kp1 { fill: #2563eb; }
+      .kp2 { fill: #16a34a; }
+      .title { font-family: Arial, "Microsoft JhengHei", sans-serif; font-size: 44px; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-family: Arial, "Microsoft JhengHei", sans-serif; font-size: 26px; fill: #475569; }
+      .label { font-family: Arial, "Microsoft JhengHei", sans-serif; font-size: 26px; font-weight: 700; fill: #0f172a; }
+      .small { font-family: Arial, "Microsoft JhengHei", sans-serif; font-size: 22px; fill: #334155; }
+      .tiny { font-family: Arial, "Microsoft JhengHei", sans-serif; font-size: 19px; fill: #475569; }
+      .mono { font-family: Consolas, "Microsoft JhengHei", monospace; font-size: 21px; fill: #1e293b; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="1000"/>
+
+  <text class="title" x="800" y="70" text-anchor="middle">SfM 初始化兩張影像與三角化示意圖</text>
+  <text class="subtitle" x="800" y="112" text-anchor="middle">從兩張有足夠 inlier matches 的影像，估計相對相機姿態，並產生第一批 3D 點</text>
+
+  <rect class="panel" x="70" y="155" width="1460" height="155" rx="8"/>
+  <text class="label" x="110" y="205">Step 1：選一對匹配品質好的影像</text>
+  <text class="small" x="110" y="250">COLMAP 先用 descriptors 找 matches，再用幾何驗證保留 inlier matches。</text>
+  <text class="mono" x="930" y="228">Image 1 keypoint ↔ Image 2 keypoint</text>
+  <text class="tiny" x="930" y="265">這些 2D 對應點是後面估計相對姿態與三角化的基礎。</text>
+
+  <rect class="image" x="155" y="390" width="260" height="320" rx="8"/>
+  <text class="label" x="285" y="365" text-anchor="middle">Image 1</text>
+  <circle class="kp1" cx="320" cy="510" r="12"/>
+  <text class="tiny" x="340" y="502">keypoint A</text>
+  <line x1="185" y1="430" x2="385" y2="650" stroke="#38bdf8" stroke-width="4"/>
+  <line x1="205" y1="625" x2="380" y2="455" stroke="#0284c7" stroke-width="3"/>
+
+  <rect class="image2" x="1185" y="390" width="260" height="320" rx="8"/>
+  <text class="label" x="1315" y="365" text-anchor="middle">Image 2</text>
+  <circle class="kp2" cx="1260" cy="540" r="12"/>
+  <text class="tiny" x="1280" y="532">keypoint B</text>
+  <line x1="1215" y1="455" x2="1415" y2="630" stroke="#86efac" stroke-width="4"/>
+  <line x1="1225" y1="650" x2="1400" y2="470" stroke="#16a34a" stroke-width="3"/>
+
+  <path class="motion" d="M475 515 C605 420, 760 405, 910 470"/>
+  <text class="label" x="690" y="400" text-anchor="middle">Step 2：估計兩張影像的相對姿態</text>
+  <text class="small" x="690" y="438" text-anchor="middle">旋轉 R 與平移 t</text>
+  <text class="tiny" x="690" y="470" text-anchor="middle">相機 2 相對於相機 1 的位置與朝向</text>
+
+  <g transform="translate(355 790)">
+    <polygon class="camera" points="0,0 55,-28 55,28"/>
+    <line class="axis" x1="52" y1="0" x2="125" y2="0"/>
+    <text class="label" x="-15" y="70">Camera 1</text>
+    <text class="tiny" x="-15" y="102">作為初始化參考座標</text>
+  </g>
+
+  <g transform="translate(1165 790) rotate(-12)">
+    <polygon class="camera" points="0,0 55,-28 55,28"/>
+    <line class="axis" x1="52" y1="0" x2="125" y2="0"/>
+  </g>
+  <text class="label" x="1145" y="860">Camera 2</text>
+  <text class="tiny" x="1145" y="892">由 inlier matches 估計相對姿態</text>
+
+  <circle class="point" cx="800" cy="585" r="17"/>
+  <text class="label" x="800" y="545" text-anchor="middle">估計出的 3D point</text>
+  <text class="tiny" x="800" y="628" text-anchor="middle">同一個場景點在兩張影像中的投影</text>
+
+  <path class="ray1" d="M410 790 L800 585"/>
+  <path class="ray2" d="M1175 790 L800 585"/>
+  <text class="small" x="530" y="720" fill="#2563eb">Camera 1 射線</text>
+  <text class="small" x="950" y="720" fill="#16a34a">Camera 2 射線</text>
+
+  <line x1="320" y1="510" x2="430" y2="760" stroke="#2563eb" stroke-width="3" stroke-dasharray="8 8"/>
+  <line x1="1260" y1="540" x2="1175" y2="760" stroke="#16a34a" stroke-width="3" stroke-dasharray="8 8"/>
+
+  <rect class="panel" x="150" y="910" width="1300" height="60" rx="8"/>
+  <text class="small" x="800" y="948" text-anchor="middle">Step 3：三角化 triangulation：兩個相機中心各拉一條射線，射線最接近的交會位置就是估計出的 3D 點。</text>
+</svg>
