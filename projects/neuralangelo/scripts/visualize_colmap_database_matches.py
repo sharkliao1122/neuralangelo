@@ -326,9 +326,14 @@ def make_match_color(index: int, total: int):
     return int(bgr[0]), int(bgr[1]), int(bgr[2])
 
 
-def draw_title_band(canvas, text: str, x: int, y: int, width: int, title_height: int):
+def draw_title_band(canvas, text: str, x: int, y: int, width: int, title_height: int, align: str = "left"):
     cv2.rectangle(canvas, (x, y), (x + width, y + title_height), (255, 255, 255), thickness=-1)
-    text_origin = (x + 8, y + title_height - 8)
+    if align == "center":
+        (text_width, _), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.52, 1)
+        text_x = x + max(8, (width - text_width) // 2)
+    else:
+        text_x = x + 8
+    text_origin = (text_x, y + title_height - 8)
     cv2.putText(canvas, text, text_origin, cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 3, cv2.LINE_AA)
     cv2.putText(canvas, text, text_origin, cv2.FONT_HERSHEY_SIMPLEX, 0.52, (30, 30, 30), 1, cv2.LINE_AA)
 
@@ -339,12 +344,12 @@ def create_canvas(image_a, image_b, layout: str, image_gap: int, title_a: str | 
     title_height = 28
 
     if layout == "vertical":
-        middle_titles = [text for text in (title_a, title_b) if text]
-        middle_band = title_height * len(middle_titles)
-        canvas_height = height_a + middle_band + image_gap + height_b
+        top_titles = [text for text in (title_a, title_b) if text]
+        top_band = title_height * len(top_titles)
+        canvas_height = top_band + height_a + image_gap + height_b
         canvas_width = max(width_a, width_b)
-        offset_a = ((canvas_width - width_a) // 2, 0)
-        offset_b = ((canvas_width - width_b) // 2, height_a + middle_band + image_gap)
+        offset_a = ((canvas_width - width_a) // 2, top_band)
+        offset_b = ((canvas_width - width_b) // 2, top_band + height_a + image_gap)
     elif layout == "horizontal":
         band_a = title_height if title_a else 0
         band_b = title_height if title_b else 0
@@ -359,8 +364,8 @@ def create_canvas(image_a, image_b, layout: str, image_gap: int, title_a: str | 
 
     canvas = np.full((canvas_height, canvas_width, 3), 255, dtype=np.uint8)
     if layout == "vertical":
-        for line_index, text in enumerate(middle_titles):
-            draw_title_band(canvas, text, 0, height_a + (line_index * title_height), canvas_width, title_height)
+        for line_index, text in enumerate(top_titles):
+            draw_title_band(canvas, text, 0, line_index * title_height, canvas_width, title_height, align="left")
     else:
         if title_a:
             draw_title_band(canvas, title_a, title_pos_a[0], title_pos_a[1], title_pos_a[2], title_height)
