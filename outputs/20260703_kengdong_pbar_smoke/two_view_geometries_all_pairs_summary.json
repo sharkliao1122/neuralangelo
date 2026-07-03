@@ -1,0 +1,50 @@
+{
+  "database_path": "C:\\research\\neuralangelo_test\\datasets\\kengdong_20260613_ds3\\database.db",
+  "image_root": "C:\\research\\neuralangelo_test\\datasets\\kengdong_20260613_ds3\\images",
+  "visualized_table": "two_view_geometries",
+  "num_pairs_available": 8339,
+  "selection_input": "2",
+  "selection_mode": "count",
+  "selection_ratio": null,
+  "selection_description": "Exporting 2 pairs.",
+  "num_pairs_selected": 2,
+  "num_pairs_processed": 2,
+  "layout": "vertical",
+  "image_gap": 40,
+  "selection_strategy": "spread",
+  "label_matches": false,
+  "show_pair_titles": true,
+  "show_pbar": true,
+  "line_thickness": 1,
+  "point_radius": 3,
+  "skip_pair_metadata": true,
+  "image_cache_size": 64,
+  "keypoint_cache_size": 256,
+  "output_dir": "C:\\research\\neuralangelo_test\\outputs\\20260703_kengdong_pbar_smoke",
+  "pairs": [
+    {
+      "batch_rank": 1,
+      "pair_id": 1556925644801,
+      "image_id1": 725,
+      "image_id2": 726,
+      "image_name1": "000725.jpg",
+      "image_name2": "000726.jpg",
+      "matches_rows": 8610,
+      "two_view_geometries_rows": 8606,
+      "output_image": "C:\\research\\neuralangelo_test\\outputs\\20260703_kengdong_pbar_smoke\\000001__pair_1556925644801__000725__000726.png",
+      "output_metadata": null
+    },
+    {
+      "batch_rank": 2,
+      "pair_id": 1539745775618,
+      "image_id1": 717,
+      "image_id2": 719,
+      "image_name1": "000718.jpg",
+      "image_name2": "000719.jpg",
+      "matches_rows": 8564,
+      "two_view_geometries_rows": 8560,
+      "output_image": "C:\\research\\neuralangelo_test\\outputs\\20260703_kengdong_pbar_smoke\\000002__pair_1539745775618__000718__000719.png",
+      "output_metadata": null
+    }
+  ]
+}

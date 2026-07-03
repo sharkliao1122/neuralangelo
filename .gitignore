@@ -10,6 +10,7 @@ checkpoints
 *.DS_Store
 *.pyc
 *.yaml
+*.png
 # Credential information that should never be checked in
 *.secret
 
@@ -29,6 +30,7 @@ checkpoints
 *.bin
 *.ply
 *.obj
+*.png
 # log folder
 logs/
 

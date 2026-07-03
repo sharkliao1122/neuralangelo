@@ -1,10 +1,13 @@
 import argparse
 import json
+import math
 import sqlite3
+from collections import OrderedDict
 from pathlib import Path
 
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 
 MAX_IMAGE_ID = 2**31 - 1
@@ -65,11 +68,18 @@ def load_pair_rows(con, table_name: str):
     if table_name not in {"matches", "two_view_geometries"}:
         raise ValueError(f"Unsupported table: {table_name}")
     query = (
-        f"SELECT pair_id, rows, cols, data FROM {table_name} "
+        f"SELECT pair_id, rows FROM {table_name} "
         f"WHERE rows > 0 AND data IS NOT NULL "
         f"ORDER BY rows DESC, pair_id ASC"
     )
     return con.execute(query).fetchall()
+
+
+def load_pair_row_count_map(con, table_name: str):
+    if table_name not in {"matches", "two_view_geometries"}:
+        raise ValueError(f"Unsupported table: {table_name}")
+    query = f"SELECT pair_id, rows FROM {table_name} WHERE rows > 0 AND data IS NOT NULL"
+    return {int(pair_id): int(rows) for pair_id, rows in con.execute(query).fetchall()}
 
 
 def load_matches_for_pair(con, table_name: str, pair_id: int):
@@ -90,11 +100,208 @@ def load_matches_for_pair(con, table_name: str, pair_id: int):
     return blob_to_array(data, np.uint32, (rows, cols))
 
 
+def parse_limit_spec(limit_spec: str, total_pairs: int, source_name: str):
+    spec = limit_spec.strip()
+    if spec == "":
+        return total_pairs, {
+            "input": spec,
+            "mode": "all",
+            "description": f"Exporting all {total_pairs} pairs.",
+        }
+
+    if spec.endswith("%"):
+        percent_text = spec[:-1].strip()
+        try:
+            ratio = float(percent_text) / 100.0
+        except ValueError as exc:
+            raise RuntimeError(f"{source_name}='{limit_spec}' is not a valid percentage.") from exc
+        if not (0.0 < ratio <= 1.0):
+            raise RuntimeError(f"{source_name}='{limit_spec}' must be between 0% and 100%.")
+        count = math.floor(total_pairs * ratio)
+        if count < 1:
+            raise RuntimeError(
+                f"{source_name}='{limit_spec}' resolves to 0 pairs after flooring. "
+                f"Please choose a larger ratio."
+            )
+        return count, {
+            "input": limit_spec,
+            "mode": "percentage",
+            "ratio": ratio,
+            "description": f"Using {limit_spec} of {total_pairs} pairs -> {count} pairs after flooring.",
+        }
+
+    if "/" in spec:
+        parts = spec.split("/", 1)
+        if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+            raise RuntimeError(f"{source_name}='{limit_spec}' is not a valid fraction.")
+        try:
+            numerator = float(parts[0].strip())
+            denominator = float(parts[1].strip())
+        except ValueError as exc:
+            raise RuntimeError(f"{source_name}='{limit_spec}' is not a valid fraction.") from exc
+        if denominator <= 0:
+            raise RuntimeError(f"{source_name}='{limit_spec}' must have a positive denominator.")
+        ratio = numerator / denominator
+        if not (0.0 < ratio <= 1.0):
+            raise RuntimeError(f"{source_name}='{limit_spec}' must resolve to a ratio between 0 and 1.")
+        count = math.floor(total_pairs * ratio)
+        if count < 1:
+            raise RuntimeError(
+                f"{source_name}='{limit_spec}' resolves to 0 pairs after flooring. "
+                f"Please choose a larger ratio."
+            )
+        return count, {
+            "input": limit_spec,
+            "mode": "fraction",
+            "ratio": ratio,
+            "description": f"Using ratio {limit_spec} of {total_pairs} pairs -> {count} pairs after flooring.",
+        }
+
+    try:
+        count = int(spec)
+    except ValueError:
+        try:
+            numeric_value = float(spec)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"{source_name}='{limit_spec}' is invalid. Use an integer count, "
+                "a ratio like 0.1, a percentage like 10%, or a fraction like 1/3."
+            ) from exc
+
+        if 0.0 < numeric_value < 1.0:
+            count = math.floor(total_pairs * numeric_value)
+            if count < 1:
+                raise RuntimeError(
+                    f"{source_name}='{limit_spec}' resolves to 0 pairs after flooring. "
+                    f"Please choose a larger ratio."
+                )
+            return count, {
+                "input": limit_spec,
+                "mode": "ratio",
+                "ratio": numeric_value,
+                "description": f"Using ratio {limit_spec} of {total_pairs} pairs -> {count} pairs after flooring.",
+            }
+
+        if numeric_value >= 1.0 and float(numeric_value).is_integer():
+            count = int(numeric_value)
+        else:
+            raise RuntimeError(
+                f"{source_name}='{limit_spec}' is invalid. "
+                "Numbers smaller than 1 are treated as ratios; counts must be integers."
+            )
+
+    if count < 1:
+        raise RuntimeError(f"{source_name} must be >= 1.")
+    if count > total_pairs:
+        raise RuntimeError(
+            f"Requested {source_name}={count}, but only {total_pairs} non-empty pairs exist."
+        )
+    return count, {
+        "input": limit_spec,
+        "mode": "count",
+        "description": f"Exporting {count} pairs.",
+    }
+
+
+def resolve_limit_pairs(total_pairs: int, table_name: str, limit_pairs: str | None, no_prompt: bool):
+    if total_pairs <= 0:
+        return 0, {"mode": "empty", "description": "No pairs available."}
+
+    print(f"Found {total_pairs} non-empty pairs in {table_name}.")
+
+    if limit_pairs is not None:
+        count, selection_info = parse_limit_spec(limit_pairs, total_pairs, "--limit_pairs")
+        print(selection_info["description"])
+        return count, selection_info
+
+    if no_prompt:
+        return total_pairs, {
+            "input": "",
+            "mode": "all",
+            "description": f"Exporting all {total_pairs} pairs because --no_prompt was enabled.",
+        }
+
+    while True:
+        try:
+            raw = input(
+                f"How many pairs do you want to export? "
+                f"[count 1-{total_pairs}, ratio like 0.1 or 10% or 1/3, Enter=all]: "
+            ).strip()
+        except EOFError as exc:
+            raise RuntimeError(
+                "Interactive input is unavailable in the current shell. "
+                "Please re-run with --limit_pairs=<N|ratio> to choose a count, "
+                "or add --no_prompt to export all pairs."
+            ) from exc
+        except KeyboardInterrupt as exc:
+            raise RuntimeError("Cancelled while waiting for pair count input.") from exc
+        if raw == "":
+            return total_pairs, {
+                "input": "",
+                "mode": "all",
+                "description": f"Exporting all {total_pairs} pairs.",
+            }
+        try:
+            count, selection_info = parse_limit_spec(raw, total_pairs, "input")
+        except RuntimeError as exc:
+            print(exc)
+            continue
+        print(selection_info["description"])
+        return count, selection_info
+
+
 def load_grayscale(path: Path):
     image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
     if image is None:
         raise FileNotFoundError(f"Failed to read image: {path}")
     return image
+
+
+class LRUCache:
+    def __init__(self, max_items: int):
+        self.max_items = max(0, int(max_items))
+        self._items = OrderedDict()
+
+    def get(self, key):
+        if self.max_items <= 0:
+            return None
+        if key not in self._items:
+            return None
+        value = self._items.pop(key)
+        self._items[key] = value
+        return value
+
+    def put(self, key, value):
+        if self.max_items <= 0:
+            return
+        if key in self._items:
+            self._items.pop(key)
+        self._items[key] = value
+        while len(self._items) > self.max_items:
+            self._items.popitem(last=False)
+
+
+class RenderAssetCache:
+    def __init__(self, image_cache_size: int, keypoint_cache_size: int):
+        self.image_cache = LRUCache(image_cache_size)
+        self.keypoint_cache = LRUCache(keypoint_cache_size)
+
+    def get_keypoints(self, con, image_id: int):
+        cached = self.keypoint_cache.get(image_id)
+        if cached is not None:
+            return cached
+        keypoints = load_keypoints(con, image_id)
+        self.keypoint_cache.put(image_id, keypoints)
+        return keypoints
+
+    def get_resized_grayscale(self, path: Path, max_side: int | None):
+        cache_key = (str(path), max_side)
+        cached = self.image_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        resized = resize_with_scale(load_grayscale(path), max_side=max_side)
+        self.image_cache.put(cache_key, resized)
+        return resized
 
 
 def resize_with_scale(image, max_side: int | None):
@@ -236,6 +443,7 @@ def write_json(path: Path, data: dict):
 
 
 def draw_pair(
+    asset_cache: RenderAssetCache,
     image_root: Path,
     image_id_a: int,
     image_id_b: int,
@@ -257,8 +465,8 @@ def draw_pair(
 ):
     image_a_full = image_root / image_name_a
     image_b_full = image_root / image_name_b
-    image_a, scale_a = resize_with_scale(load_grayscale(image_a_full), max_side=max_side)
-    image_b, scale_b = resize_with_scale(load_grayscale(image_b_full), max_side=max_side)
+    image_a, scale_a = asset_cache.get_resized_grayscale(image_a_full, max_side=max_side)
+    image_b, scale_b = asset_cache.get_resized_grayscale(image_b_full, max_side=max_side)
 
     candidate_points_a = keypoints_a[matches[:, 0]]
     candidate_points_b = keypoints_b[matches[:, 1]]
@@ -295,26 +503,26 @@ def draw_pair(
     return image_a_full, image_b_full, len(draw_matches)
 
 
-def summarize_pair(con, image_map, pair_id: int):
+def summarize_pair(image_map, pair_id: int, matches_row_count_map: dict, two_view_row_count_map: dict):
     image_id1, image_id2 = pair_id_to_image_ids(pair_id)
     name1 = image_map[image_id1]
     name2 = image_map[image_id2]
-    raw_count = con.execute("SELECT rows FROM matches WHERE pair_id = ?", (pair_id,)).fetchone()
-    verified_count = con.execute("SELECT rows FROM two_view_geometries WHERE pair_id = ?", (pair_id,)).fetchone()
     return {
         "pair_id": int(pair_id),
         "image_id1": image_id1,
         "image_id2": image_id2,
         "image_name1": name1,
         "image_name2": name2,
-        "matches_rows": int(raw_count[0]) if raw_count else 0,
-        "two_view_geometries_rows": int(verified_count[0]) if verified_count else 0,
+        "matches_rows": int(matches_row_count_map.get(int(pair_id), 0)),
+        "two_view_geometries_rows": int(two_view_row_count_map.get(int(pair_id), 0)),
     }
 
 
 def render_pair_visualization(
     con,
     image_map,
+    pair_summary: dict,
+    asset_cache: RenderAssetCache,
     pair_id: int,
     database_path: Path,
     image_root: Path,
@@ -331,18 +539,20 @@ def render_pair_visualization(
     show_pair_titles: bool,
     selection_mode: str,
     top_rows: list,
+    write_metadata: bool,
     metadata_output: Path | None = None,
     metadata_overrides: dict | None = None,
 ):
-    summary = summarize_pair(con, image_map, pair_id)
+    summary = pair_summary
     image_id1 = summary["image_id1"]
     image_id2 = summary["image_id2"]
     image_name1 = summary["image_name1"]
     image_name2 = summary["image_name2"]
-    keypoints1 = load_keypoints(con, image_id1)
-    keypoints2 = load_keypoints(con, image_id2)
+    keypoints1 = asset_cache.get_keypoints(con, image_id1)
+    keypoints2 = asset_cache.get_keypoints(con, image_id2)
     matches = load_matches_for_pair(con, table_name, pair_id)
     image_a_full, image_b_full, drawn_count = draw_pair(
+        asset_cache=asset_cache,
         image_root=image_root,
         image_id_a=image_id1,
         image_id_b=image_id2,
@@ -385,9 +595,12 @@ def render_pair_visualization(
     if metadata_overrides:
         metadata.update(metadata_overrides)
 
-    if metadata_output is None:
-        metadata_output = output_path.with_suffix(output_path.suffix + ".json")
-    write_json(metadata_output, metadata)
+    if write_metadata:
+        if metadata_output is None:
+            metadata_output = output_path.with_suffix(output_path.suffix + ".json")
+        write_json(metadata_output, metadata)
+    else:
+        metadata_output = None
     return metadata, metadata_output
 
 
@@ -410,7 +623,15 @@ def main():
     parser.add_argument("--image_name1", type=str, default=None, help="First image name from COLMAP images table")
     parser.add_argument("--image_name2", type=str, default=None, help="Second image name from COLMAP images table")
     parser.add_argument("--rank", type=int, default=1, help="1-based rank when auto-selecting by descending row count")
-    parser.add_argument("--limit_pairs", type=int, default=None, help="Optional limit for batch all-pairs mode")
+    parser.add_argument(
+        "--limit_pairs",
+        type=str,
+        default=None,
+        help="Optional batch limit. Supports counts like 20, ratios like 0.1, percentages like 10%, or fractions like 1/3",
+    )
+    parser.add_argument("--count_only", action="store_true", help="Only report how many non-empty pairs are available, then exit")
+    parser.add_argument("--no_prompt", action="store_true", help="Do not prompt for pair count in batch mode; export all when --limit_pairs is omitted")
+    parser.add_argument("--show_pbar", action="store_true", help="Show a progress bar while rendering batch outputs")
     parser.add_argument("--max_draw_matches", type=int, default=100, help="Maximum number of match lines to draw")
     parser.add_argument("--max_side", type=int, default=1280, help="Resize image long side for output visualization")
     parser.add_argument("--layout", choices=["vertical", "horizontal"], default="vertical", help="How to arrange the two images")
@@ -420,13 +641,55 @@ def main():
     parser.add_argument("--show_pair_titles", action="store_true", help="Show image ids and filenames in the figure")
     parser.add_argument("--line_thickness", type=int, default=1, help="Line thickness for match connections")
     parser.add_argument("--point_radius", type=int, default=3, help="Radius of endpoint markers")
+    parser.add_argument(
+        "--skip_pair_metadata",
+        action="store_true",
+        help="Skip per-pair sidecar JSON files in batch mode. The batch summary JSON is still written.",
+    )
+    parser.add_argument(
+        "--image_cache_size",
+        type=int,
+        default=64,
+        help="Maximum number of resized grayscale images to cache in memory. Use 0 to disable image caching.",
+    )
+    parser.add_argument(
+        "--keypoint_cache_size",
+        type=int,
+        default=256,
+        help="Maximum number of keypoint arrays to cache in memory. Use 0 to disable keypoint caching.",
+    )
     args = parser.parse_args()
 
     con = sqlite3.connect(args.database_path)
     image_map = load_image_map(con)
     name_to_id_map = load_name_to_id_map(image_map)
     pair_rows = load_pair_rows(con, args.table)
-    top_rows = [summarize_pair(con, image_map, int(row[0])) for row in pair_rows[:10]]
+    num_pairs_available = len(pair_rows)
+    matches_row_count_map = load_pair_row_count_map(con, "matches")
+    two_view_row_count_map = load_pair_row_count_map(con, "two_view_geometries")
+    top_rows = [
+        summarize_pair(
+            image_map,
+            int(row[0]),
+            matches_row_count_map=matches_row_count_map,
+            two_view_row_count_map=two_view_row_count_map,
+        )
+        for row in pair_rows[:10]
+    ]
+    asset_cache = RenderAssetCache(
+        image_cache_size=args.image_cache_size,
+        keypoint_cache_size=args.keypoint_cache_size,
+    )
+
+    if args.count_only:
+        con.close()
+        print(json.dumps({
+            "mode": "count_only",
+            "database_path": str(args.database_path),
+            "visualized_table": args.table,
+            "num_pairs_available": num_pairs_available,
+        }, indent=2))
+        return
 
     if args.all_pairs:
         if args.output_dir is None:
@@ -435,18 +698,36 @@ def main():
             raise RuntimeError("Do not combine --all_pairs with --output or --metadata_output.")
         if args.pair_id is not None or args.image_name1 is not None or args.image_name2 is not None:
             raise RuntimeError("Do not combine --all_pairs with --pair_id or --image_name1/--image_name2.")
+        if not pair_rows:
+            raise RuntimeError(f"No non-empty rows found in {args.table}")
 
-        selected_rows = pair_rows[:args.limit_pairs] if args.limit_pairs is not None else pair_rows
+        selected_limit, selection_info = resolve_limit_pairs(
+            total_pairs=num_pairs_available,
+            table_name=args.table,
+            limit_pairs=args.limit_pairs,
+            no_prompt=args.no_prompt,
+        )
+        selected_rows = pair_rows[:selected_limit]
         args.output_dir.mkdir(parents=True, exist_ok=True)
         batch_items = []
+        row_iterator = selected_rows
+        if args.show_pbar:
+            row_iterator = tqdm(selected_rows, total=len(selected_rows), desc=f"Rendering {args.table}", leave=True)
 
-        for batch_rank, row in enumerate(selected_rows, start=1):
+        for batch_rank, row in enumerate(row_iterator, start=1):
             pair_id = int(row[0])
-            pair_summary = summarize_pair(con, image_map, pair_id)
+            pair_summary = summarize_pair(
+                image_map,
+                pair_id,
+                matches_row_count_map=matches_row_count_map,
+                two_view_row_count_map=two_view_row_count_map,
+            )
             output_path = args.output_dir / build_output_filename(batch_rank, pair_summary)
             metadata, metadata_path = render_pair_visualization(
                 con=con,
                 image_map=image_map,
+                pair_summary=pair_summary,
+                asset_cache=asset_cache,
                 pair_id=pair_id,
                 database_path=args.database_path,
                 image_root=args.image_root,
@@ -463,6 +744,7 @@ def main():
                 show_pair_titles=True,
                 selection_mode="all_pairs",
                 top_rows=top_rows,
+                write_metadata=not args.skip_pair_metadata,
                 metadata_overrides={"batch_rank": batch_rank},
             )
             batch_items.append({
@@ -475,7 +757,7 @@ def main():
                 "matches_rows": metadata["selected_pair"]["matches_rows"],
                 "two_view_geometries_rows": metadata["selected_pair"]["two_view_geometries_rows"],
                 "output_image": metadata["output_image"],
-                "output_metadata": str(metadata_path),
+                "output_metadata": str(metadata_path) if metadata_path is not None else None,
             })
 
         summary_output = args.summary_output or (args.output_dir / f"{args.table}_all_pairs_summary.json")
@@ -483,14 +765,24 @@ def main():
             "database_path": str(args.database_path),
             "image_root": str(args.image_root),
             "visualized_table": args.table,
+            "num_pairs_available": num_pairs_available,
+            "selection_input": selection_info.get("input"),
+            "selection_mode": selection_info.get("mode"),
+            "selection_ratio": selection_info.get("ratio"),
+            "selection_description": selection_info.get("description"),
+            "num_pairs_selected": len(selected_rows),
             "num_pairs_processed": len(batch_items),
             "layout": args.layout,
             "image_gap": args.image_gap,
             "selection_strategy": args.selection_strategy,
             "label_matches": args.label_matches,
             "show_pair_titles": True,
+            "show_pbar": args.show_pbar,
             "line_thickness": args.line_thickness,
             "point_radius": args.point_radius,
+            "skip_pair_metadata": args.skip_pair_metadata,
+            "image_cache_size": args.image_cache_size,
+            "keypoint_cache_size": args.keypoint_cache_size,
             "output_dir": str(args.output_dir),
             "pairs": batch_items,
         }
@@ -499,7 +791,14 @@ def main():
         print(json.dumps({
             "mode": "all_pairs",
             "summary_output": str(summary_output),
+            "num_pairs_available": num_pairs_available,
+            "selection_input": selection_info.get("input"),
+            "selection_mode": selection_info.get("mode"),
+            "selection_ratio": selection_info.get("ratio"),
+            "num_pairs_selected": len(selected_rows),
             "num_pairs_processed": len(batch_items),
+            "show_pbar": args.show_pbar,
+            "skip_pair_metadata": args.skip_pair_metadata,
             "first_output": batch_items[0]["output_image"] if batch_items else None,
         }, indent=2))
         return
@@ -533,9 +832,17 @@ def main():
     else:
         pair_id = args.pair_id
 
+    pair_summary = summarize_pair(
+        image_map,
+        pair_id,
+        matches_row_count_map=matches_row_count_map,
+        two_view_row_count_map=two_view_row_count_map,
+    )
     metadata, _ = render_pair_visualization(
         con=con,
         image_map=image_map,
+        pair_summary=pair_summary,
+        asset_cache=asset_cache,
         pair_id=pair_id,
         database_path=args.database_path,
         image_root=args.image_root,
@@ -552,6 +859,7 @@ def main():
         show_pair_titles=args.show_pair_titles,
         selection_mode=selection_mode,
         top_rows=top_rows,
+        write_metadata=True,
         metadata_output=args.metadata_output,
         metadata_overrides=metadata_overrides,
     )

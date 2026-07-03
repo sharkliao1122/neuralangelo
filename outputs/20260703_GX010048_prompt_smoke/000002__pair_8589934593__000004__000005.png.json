@@ -1,0 +1,119 @@
+{
+  "database_path": "C:\\research\\neuralangelo_test\\datasets\\GX010048_ds6\\database.db",
+  "image_root": "C:\\research\\neuralangelo_test\\datasets\\GX010048_ds6\\images",
+  "visualized_table": "two_view_geometries",
+  "selection_mode": "all_pairs",
+  "selected_pair": {
+    "pair_id": 8589934593,
+    "image_id1": 4,
+    "image_id2": 5,
+    "image_name1": "000004.jpg",
+    "image_name2": "000005.jpg",
+    "matches_rows": 7053,
+    "two_view_geometries_rows": 7051
+  },
+  "num_drawn_matches": 3,
+  "output_image": "C:\\research\\neuralangelo_test\\outputs\\20260703_GX010048_prompt_smoke\\000002__pair_8589934593__000004__000005.png",
+  "source_image1": "C:\\research\\neuralangelo_test\\datasets\\GX010048_ds6\\images\\000004.jpg",
+  "source_image2": "C:\\research\\neuralangelo_test\\datasets\\GX010048_ds6\\images\\000005.jpg",
+  "layout": "vertical",
+  "image_gap": 40,
+  "selection_strategy": "spread",
+  "label_matches": false,
+  "line_thickness": 1,
+  "point_radius": 3,
+  "show_pair_titles": true,
+  "top_pairs_by_table_rows": [
+    {
+      "pair_id": 17179869185,
+      "image_id1": 8,
+      "image_id2": 9,
+      "image_name1": "000008.jpg",
+      "image_name2": "000009.jpg",
+      "matches_rows": 7190,
+      "two_view_geometries_rows": 7189
+    },
+    {
+      "pair_id": 8589934593,
+      "image_id1": 4,
+      "image_id2": 5,
+      "image_name1": "000004.jpg",
+      "image_name2": "000005.jpg",
+      "matches_rows": 7053,
+      "two_view_geometries_rows": 7051
+    },
+    {
+      "pair_id": 201863462914,
+      "image_id1": 94,
+      "image_id2": 96,
+      "image_name1": "000094.jpg",
+      "image_name2": "000095.jpg",
+      "matches_rows": 6936,
+      "two_view_geometries_rows": 6927
+    },
+    {
+      "pair_id": 204010946561,
+      "image_id1": 95,
+      "image_id2": 96,
+      "image_name1": "000096.jpg",
+      "image_name2": "000095.jpg",
+      "matches_rows": 6930,
+      "two_view_geometries_rows": 6924
+    },
+    {
+      "pair_id": 6442450945,
+      "image_id1": 3,
+      "image_id2": 4,
+      "image_name1": "000003.jpg",
+      "image_name2": "000004.jpg",
+      "matches_rows": 6789,
+      "two_view_geometries_rows": 6789
+    },
+    {
+      "pair_id": 6442450946,
+      "image_id1": 3,
+      "image_id2": 5,
+      "image_name1": "000003.jpg",
+      "image_name2": "000005.jpg",
+      "matches_rows": 6789,
+      "two_view_geometries_rows": 6785
+    },
+    {
+      "pair_id": 10737418241,
+      "image_id1": 5,
+      "image_id2": 6,
+      "image_name1": "000005.jpg",
+      "image_name2": "000006.jpg",
+      "matches_rows": 6778,
+      "two_view_geometries_rows": 6777
+    },
+    {
+      "pair_id": 384399572993,
+      "image_id1": 179,
+      "image_id2": 180,
+      "image_name1": "000179.jpg",
+      "image_name2": "000180.jpg",
+      "matches_rows": 6755,
+      "two_view_geometries_rows": 6754
+    },
+    {
+      "pair_id": 12884901889,
+      "image_id1": 6,
+      "image_id2": 7,
+      "image_name1": "000006.jpg",
+      "image_name2": "000007.jpg",
+      "matches_rows": 6698,
+      "two_view_geometries_rows": 6696
+    },
+    {
+      "pair_id": 373662154753,
+      "image_id1": 174,
+      "image_id2": 175,
+      "image_name1": "000174.jpg",
+      "image_name2": "000175.jpg",
+      "matches_rows": 6698,
+      "two_view_geometries_rows": 6691
+    }
+  ],
+  "batch_rank": 2
+}
