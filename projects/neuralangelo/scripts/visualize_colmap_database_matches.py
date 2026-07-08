@@ -338,27 +338,37 @@ def draw_title_band(canvas, text: str, x: int, y: int, width: int, title_height:
     cv2.putText(canvas, text, text_origin, cv2.FONT_HERSHEY_SIMPLEX, 0.52, (30, 30, 30), 1, cv2.LINE_AA)
 
 
-def create_canvas(image_a, image_b, layout: str, image_gap: int, title_a: str | None = None, title_b: str | None = None):
+def create_canvas(
+    image_a,
+    image_b,
+    layout: str,
+    image_gap: int,
+    title_a: str | None = None,
+    title_b: str | None = None,
+    header_lines: list[str] | None = None,
+):
     height_a, width_a = image_a.shape[:2]
     height_b, width_b = image_b.shape[:2]
     title_height = 28
+    header_lines = [text for text in (header_lines or []) if text]
 
     if layout == "vertical":
-        top_titles = [text for text in (title_a, title_b) if text]
+        top_titles = header_lines + [text for text in (title_a, title_b) if text]
         top_band = title_height * len(top_titles)
         canvas_height = top_band + height_a + image_gap + height_b
         canvas_width = max(width_a, width_b)
         offset_a = ((canvas_width - width_a) // 2, top_band)
         offset_b = ((canvas_width - width_b) // 2, top_band + height_a + image_gap)
     elif layout == "horizontal":
+        header_band = title_height * len(header_lines)
         band_a = title_height if title_a else 0
         band_b = title_height if title_b else 0
-        canvas_height = max(band_a + height_a, band_b + height_b)
+        canvas_height = header_band + max(band_a + height_a, band_b + height_b)
         canvas_width = width_a + image_gap + width_b
-        offset_a = (0, band_a)
-        offset_b = (width_a + image_gap, band_b)
-        title_pos_a = (0, 0, width_a)
-        title_pos_b = (width_a + image_gap, 0, width_b)
+        offset_a = (0, header_band + band_a)
+        offset_b = (width_a + image_gap, header_band + band_b)
+        title_pos_a = (0, header_band, width_a)
+        title_pos_b = (width_a + image_gap, header_band, width_b)
     else:
         raise ValueError(f"Unsupported layout: {layout}")
 
@@ -367,6 +377,8 @@ def create_canvas(image_a, image_b, layout: str, image_gap: int, title_a: str | 
         for line_index, text in enumerate(top_titles):
             draw_title_band(canvas, text, 0, line_index * title_height, canvas_width, title_height, align="left")
     else:
+        for line_index, text in enumerate(header_lines):
+            draw_title_band(canvas, text, 0, line_index * title_height, canvas_width, title_height, align="left")
         if title_a:
             draw_title_band(canvas, title_a, title_pos_a[0], title_pos_a[1], title_pos_a[2], title_height)
         if title_b:
@@ -442,8 +454,25 @@ def build_output_filename(index: int, pair_summary: dict):
     return f"{index:06d}__pair_{pair_summary['pair_id']}__{name1}__{name2}.png"
 
 
+def resolve_batch_output_dir(output_dir: Path, num_pairs_available: int):
+    suffix = f"_{num_pairs_available}"
+    name = output_dir.name
+    if name.endswith(suffix):
+        return output_dir
+
+    stem_parts = name.rsplit("_", 1)
+    if len(stem_parts) == 2 and stem_parts[1].isdigit():
+        name = stem_parts[0]
+
+    return output_dir.with_name(f"{name}{suffix}")
+
+
 def build_image_title(slot_label: str, image_id: int, image_name: str):
     return f"{slot_label}: id={image_id}  file={Path(image_name).name}"
+
+
+def build_match_count_title(total_matches: int, drawn_matches: int):
+    return f"Matches: total={total_matches}  shown={drawn_matches}"
 
 
 def write_json(path: Path, data: dict):
@@ -480,6 +509,8 @@ def draw_pair(
     candidate_points_a = keypoints_a[matches[:, 0]]
     candidate_points_b = keypoints_b[matches[:, 1]]
     draw_matches = select_match_subset(matches, candidate_points_a, candidate_points_b, max_draw_matches, selection_strategy)
+    total_matches = len(matches)
+    drawn_matches = len(draw_matches)
     points_a = keypoints_a[draw_matches[:, 0]].copy()
     points_b = keypoints_b[draw_matches[:, 1]].copy()
     points_a[:, 0] *= scale_a
@@ -489,6 +520,7 @@ def draw_pair(
 
     title_a = build_image_title("Photo A", image_id_a, image_name_a) if show_pair_titles else None
     title_b = build_image_title("Photo B", image_id_b, image_name_b) if show_pair_titles else None
+    header_lines = [build_match_count_title(total_matches, drawn_matches)]
     canvas, offset_a, offset_b = create_canvas(
         image_a,
         image_b,
@@ -496,6 +528,7 @@ def draw_pair(
         image_gap=image_gap,
         title_a=title_a,
         title_b=title_b,
+        header_lines=header_lines,
     )
     canvas = draw_match_overlay(
         canvas,
@@ -509,7 +542,7 @@ def draw_pair(
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(output_path), canvas)
-    return image_a_full, image_b_full, len(draw_matches)
+    return image_a_full, image_b_full, total_matches, drawn_matches
 
 
 def summarize_pair(image_map, pair_id: int, matches_row_count_map: dict, two_view_row_count_map: dict):
@@ -560,7 +593,7 @@ def render_pair_visualization(
     keypoints1 = asset_cache.get_keypoints(con, image_id1)
     keypoints2 = asset_cache.get_keypoints(con, image_id2)
     matches = load_matches_for_pair(con, table_name, pair_id)
-    image_a_full, image_b_full, drawn_count = draw_pair(
+    image_a_full, image_b_full, total_match_count, drawn_count = draw_pair(
         asset_cache=asset_cache,
         image_root=image_root,
         image_id_a=image_id1,
@@ -588,6 +621,7 @@ def render_pair_visualization(
         "visualized_table": table_name,
         "selection_mode": selection_mode,
         "selected_pair": summary,
+        "num_total_matches": total_match_count,
         "num_drawn_matches": drawn_count,
         "output_image": str(output_path),
         "source_image1": str(image_a_full),
@@ -717,7 +751,8 @@ def main():
             no_prompt=args.no_prompt,
         )
         selected_rows = pair_rows[:selected_limit]
-        args.output_dir.mkdir(parents=True, exist_ok=True)
+        resolved_output_dir = resolve_batch_output_dir(args.output_dir, num_pairs_available)
+        resolved_output_dir.mkdir(parents=True, exist_ok=True)
         batch_items = []
         row_iterator = selected_rows
         if args.show_pbar:
@@ -731,7 +766,7 @@ def main():
                 matches_row_count_map=matches_row_count_map,
                 two_view_row_count_map=two_view_row_count_map,
             )
-            output_path = args.output_dir / build_output_filename(batch_rank, pair_summary)
+            output_path = resolved_output_dir / build_output_filename(batch_rank, pair_summary)
             metadata, metadata_path = render_pair_visualization(
                 con=con,
                 image_map=image_map,
@@ -769,7 +804,7 @@ def main():
                 "output_metadata": str(metadata_path) if metadata_path is not None else None,
             })
 
-        summary_output = args.summary_output or (args.output_dir / f"{args.table}_all_pairs_summary.json")
+        summary_output = args.summary_output or (resolved_output_dir / f"{args.table}_all_pairs_summary.json")
         batch_summary = {
             "database_path": str(args.database_path),
             "image_root": str(args.image_root),
@@ -792,7 +827,7 @@ def main():
             "skip_pair_metadata": args.skip_pair_metadata,
             "image_cache_size": args.image_cache_size,
             "keypoint_cache_size": args.keypoint_cache_size,
-            "output_dir": str(args.output_dir),
+            "output_dir": str(resolved_output_dir),
             "pairs": batch_items,
         }
         write_json(summary_output, batch_summary)

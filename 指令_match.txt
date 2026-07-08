@@ -1,19 +1,44 @@
-cd /d C:\research\neuralangelo_test
-conda activate neuralangelo_5080
-
-
 --------------------------- all_pairs ----------------------------
 
+condo activate neuralangelo_5080
+cd /d C:\research\neuralangelo_test
+
 python projects\neuralangelo\scripts\visualize_colmap_database_matches.py ^
-  --database_path=C:\research\neuralangelo_test\datasets\kengdong_20260613_ds3\database.db ^
-  --image_root=C:\research\neuralangelo_test\datasets\kengdong_20260613_ds3\images ^
+  --database_path=... ^
+  --image_root=... ^
   --table=two_view_geometries ^
   --all_pairs ^
   --show_pbar ^
   --skip_pair_metadata ^
   --max_side=960 ^
-  --max_draw_matches=40 ^
+  --max_draw_matches=80 ^
   --selection_strategy=first ^
   --image_cache_size=128 ^
   --keypoint_cache_size=512 ^
-  --output_dir=C:\research\neuralangelo_test\outputs\20260613_kengdong_2\match_figure
+  --output_dir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4\match_figure
+
+
+--------------------------- SHOW POSE ----------------------------
+
+cd /d C:\research\neuralangelo_test\third_party\colmap\scripts\python
+
+python visualize_model.py ^
+  --input_model C:\research\neuralangelo_test\datasets\20260703_nonsmooth_match_ds4\sparse ^
+  --input_format .bin
+
+--------------------------- SHOW POSE ----------------------------
+
+cd /d C:\research\neuralangelo_test
+
+python projects\neuralangelo\scripts\visualize_pose_trajectory.py ^
+  --transforms_json=C:\research\neuralangelo_test\datasets\20260613_kengdong_ds3\transforms.json ^
+  --output=C:\research\neuralangelo_test\outputs\20260613_kengdong_2\colmap_pose_trajectory.gif ^
+  --title=20260613_kengdong_ds3 ^
+  --sort_mode=natural ^
+  --fps=10 ^
+  --tail_length=80 ^
+  --show_object_center ^
+  --show_focus_line ^
+  --object_center_source=auto ^
+  --frame_step=6 ^
+  --gif_dpi=90
