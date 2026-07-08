@@ -4,8 +4,8 @@ conda activate neuralangelo_5080
 cd /d C:\research\neuralangelo_test
 
 python projects\neuralangelo\scripts\visualize_colmap_database_matches.py ^
-  --database_path=C:\research\neuralangelo_test\datasets\20260625_nonsmooth_ds4\database.db ^
-  --image_root=C:\research\neuralangelo_test\datasets\20260625_nonsmooth_ds4\images ^
+  --database_path=C:\research\neuralangelo_test\datasets\20260703_nonsmooth_match_ds4\database.db ^
+  --image_root=C:\research\neuralangelo_test\datasets\20260703_nonsmooth_match_ds4\images ^
   --table=two_view_geometries ^
   --all_pairs ^
   --show_pbar ^
@@ -15,7 +15,7 @@ python projects\neuralangelo\scripts\visualize_colmap_database_matches.py ^
   --selection_strategy=first ^
   --image_cache_size=128 ^
   --keypoint_cache_size=512 ^
-  --output_dir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4\match_figure
+  --output_dir=C:\research\neuralangelo_test\outputs\20260703_nonsmooth_match_ds4\match_figure
 
 
 --------------------------- SHOW POSE ----------------------------
@@ -24,12 +24,6 @@ cd /d C:\research\neuralangelo_test\third_party\colmap\scripts\python
 
 python visualize_model.py ^
   --input_model C:\research\neuralangelo_test\datasets\20260625_nonsmooth_ds4\sparse ^
-  --input_format .bin
-
-
-
-python visualize_model.py ^
-  --input_model C:\research\neuralangelo_test\datasets\20260703_nonsmooth_match_ds4\sparse ^
   --input_format .bin
 
 --------------------------- SHOW POSE ----------------------------

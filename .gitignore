@@ -1,48 +1,79 @@
-checkpoints
+/checkpoints/
+/checkpoint/
+/outputs/
+/output/
+/logs/
+/runs/
+/wandb/
+/tensorboard/
+/CLIP/
 
 # Other uncheckable file types
 *.zip
 *.exe
 *.dll
+*.pdb
+*.lib
+*.exp
 *.swp
-*.vscode
-*.ipynb
-*.DS_Store
 *.pyc
-*.yaml
-*.png
 # Credential information that should never be checked in
 *.secret
+.env
+.env.*
+!.env.example
+
+# Editor / OS temporary files
+.vscode/
+.idea/
+*.ipynb
+.DS_Store
+Thumbs.db
 
 # Data types
 
-*.hdr
-*.jpeg
-*.pgm
-*.tiff
-*.tif
-*.mp4
-*.MOV
+/*.hdr
+/*.jpeg
+/*.jpg
+/*.png
+/*.pgm
+/*.tiff
+/*.tif
+/*.mp4
+/*.MP4
+/*.MOV
+/*.mov
 *.tar
 *.tar.gz
 *.pkl
 *.pt
+*.pth
+*.ckpt
 *.bin
 *.ply
 *.obj
-*.png
 
 
-# log folder
-logs/
-
-# dataset folder
-datasets/
+# Dataset / raw data
 /datasets/
+/data/
+/raw_data/
+/images/
+/images_raw/
+/frames/
+database.db
+database.db-*
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Local installed tools
+/tools/
 
 # config folder
-!projects/neuralangelo/configs/custom/template.yaml
-projects/neuralangelo/configs/custom
+/projects/neuralangelo/configs/custom/*
+!/projects/neuralangelo/configs/custom/
+!/projects/neuralangelo/configs/custom/template.yaml
 
 # ------------------------ BELOW IS AUTO-GENERATED FOR PYTHON REPOS ------------------------
 
@@ -90,7 +121,7 @@ htmlcov/
 .nox/
 .coverage
 .coverage.*
-.cache
+.cache/
 nosetests.xml
 coverage.xml
 *.cover
@@ -124,7 +155,7 @@ docs/_build/
 target/
 
 # Jupyter Notebook
-.ipynb_checkpoints
+.ipynb_checkpoints/
 
 # IPython
 profile_default/
@@ -168,8 +199,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
-.venv
+.venv/
 env/
 venv/
 ENV/
@@ -206,5 +236,4 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
-CLIP
-/third_party
+/third_party/
