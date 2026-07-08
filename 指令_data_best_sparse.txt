@@ -2,6 +2,7 @@ conda activate neuralangelo_5080
 cd /d C:\research\neuralangelo_test
 
 @echo off
+setlocal EnableDelayedExpansion
 set "SEQUENCE=20260703_nonsmooth_match"
 set "DOWNSAMPLE_RATE=4"
 set "VIDEO=C:\research\data_mp4\20260703_nonsmooth_match.MP4"
@@ -22,6 +23,9 @@ if not exist "%DATA_PATH%" mkdir "%DATA_PATH%"
 if not exist "%IMAGE_RAW%" mkdir "%IMAGE_RAW%"
 if not exist "%DATA_PATH%\sparse" mkdir "%DATA_PATH%\sparse"
 
+rem If you rerun on the same DATA_PATH, remove old sparse\0, sparse\1, ...
+rem first to avoid selecting an older larger model by mistake.
+
 "%FFMPEG%" -nostdin -i "%VIDEO%" -vf "select=not(mod(n\,%DOWNSAMPLE_RATE%))" -vsync vfr -q:v 2 "%IMAGE_RAW%\%06d.jpg"
 
 call "%COLMAP%" feature_extractor ^
@@ -41,7 +45,26 @@ call "%COLMAP%" mapper ^
   --image_path "%IMAGE_RAW%" ^
   --output_path "%DATA_PATH%\sparse"
 
-copy "%DATA_PATH%\sparse\0\*.bin" "%DATA_PATH%\sparse\" /Y
+set "BEST_SPARSE_DIR="
+set /a BEST_SPARSE_SIZE=-1
+for /d %%D in ("%DATA_PATH%\sparse\*") do (
+  if exist "%%~fD\images.bin" (
+    set /a MODEL_SIZE=0
+    for %%F in ("%%~fD\*.bin") do set /a MODEL_SIZE+=%%~zF
+    if !MODEL_SIZE! GTR !BEST_SPARSE_SIZE! (
+      set "BEST_SPARSE_DIR=%%~fD"
+      set /a BEST_SPARSE_SIZE=!MODEL_SIZE!
+    )
+  )
+)
+
+if not defined BEST_SPARSE_DIR (
+  echo No valid sparse model was found under "%DATA_PATH%\sparse".
+  exit /b 1
+)
+
+echo Using sparse model "!BEST_SPARSE_DIR!" with total .bin size !BEST_SPARSE_SIZE! bytes.
+copy "!BEST_SPARSE_DIR!\*.bin" "%DATA_PATH%\sparse\" /Y
 
 call "%COLMAP%" image_undistorter ^
   --image_path "%IMAGE_RAW%" ^
@@ -59,4 +82,3 @@ call "%COLMAP%" image_undistorter ^
   --scene_type %SCENE_TYPE% ^
   --val_short_size %VAL_SHORT_SIZE% ^
   --auto_exposure_wb
-
