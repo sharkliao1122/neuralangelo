@@ -28,6 +28,6 @@ python visualize_model.py ^
   --input_format .bin
 
 python visualize_model.py ^
-  --input_model  C:\research\neuralangelo_test\datasets\20260703_nonsmooth_match_ds4\sparse ^
+  --input_model  C:\research\neuralangelo_test\datasets\20260703_nonsmooth_match_ds8_posefix\sparse ^
   --input_format .bin
 
