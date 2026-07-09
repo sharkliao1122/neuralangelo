@@ -1,19 +1,18 @@
+--------------------------- training ----------------------------
 conda activate neuralangelo_5080
 cd /d C:\research\neuralangelo_test
 
---------------------------- training ----------------------------
-
 python train.py ^
-  --config=C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\chair_colmap.yaml ^
-  --logdir=C:\research\neuralangelo_test\outputs\20260702_chair_colmap ^
+  --config=C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\20260625_nonsmooth_ds4.yaml ^
+  --logdir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4_2 ^
   --single_gpu ^
   --show_pbar ^
   --total_time ^
   --record_command ^
   --plot_loss_curve ^
   --trainer.amp_config.enabled ^
-  --max_iter=200000 ^
-  --validation_iter=200000 ^
+  --max_iter=400000 ^
+  --validation_iter=100000 ^
   --checkpoint.save_iter=100000 ^
   --optim.params.lr=5e-4 ^
   --trainer.loss_weight.curvature=0.0 ^
@@ -21,24 +20,24 @@ python train.py ^
   --data.preload! ^
   --data.num_workers=0 ^
   --data.use_multi_epoch_loader! ^
-  --data.train.image_size=[720,1280] ^
+  --data.train.image_size=[1080,1920] ^
   --data.val.image_size=[300,533] ^
   --render_val_after_train ^
   --render_val_subset=10 ^
   --render_val_save_frames_only ^
-  --render_val_output_dir=C:\research\neuralangelo_test\outputs\20260702_chair_colmap\renders_final_png
+  --render_val_output_dir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4_2\renders_final_png
 
 --------------------------- extract_mesh ----------------------------
 
 python projects\neuralangelo\scripts\extract_mesh.py ^
-  --config=C:\research\neuralangelo_test\outputs\kengdong_20260613_2\config.yaml^
-  --checkpoint=C:\research\neuralangelo_test\outputs\kengdong_20260613_2\epoch_00838_iteration_000400000_checkpoint.pt^
+  --config=C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\20260625_nonsmooth_ds4.yaml^
+  --checkpoint=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4\epoch_02189_iteration_000300000_checkpoint.pt^
   --single_gpu ^
   --resolution=2048 ^
   --block_res=64 ^
   --texture_chunk_size=16384 ^
   --textured ^
-  --output_file=C:\research\neuralangelo_test\outputs\kengdong_20260613_2\mesh_res_2048_texture.ply
+  --output_file=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4\mesh_res_2048_texture.ply
 
 
 --------------------------- MESH CLEAN ----------------------------
@@ -62,27 +61,3 @@ C:\research\neuralangelo_test\projects\neuralangelo\scripts\render_val.py ^
 --subset=8
 
 
- python train.py ^
-  --config=C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\20260625_nonsmooth_ds10.yaml ^
-  --logdir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds10_nan_safe ^
-  --single_gpu ^
-  --show_pbar ^
-  --total_time ^
-  --record_command ^
-  --plot_loss_curve ^
-  --max_iter=5000 ^
-  --validation_iter=5000 ^
-  --checkpoint.save_iter=5000 ^
-  --optim.params.lr=1e-4 ^
-  --trainer.loss_weight.curvature=0.0 ^
-  --model.appear_embed.enabled! ^
-  --model.render.rand_rays=128 ^
-  --data.preload! ^
-  --data.num_workers=0 ^
-  --data.use_multi_epoch_loader! ^
-  --data.train.image_size=[540,960] ^
-  --data.val.image_size=[300,533] ^
-  --render_val_after_train ^
-  --render_val_subset=8 ^
-  --render_val_save_frames_only ^
-  --render_val_output_dir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds10_nan_safe\renders_final_png
