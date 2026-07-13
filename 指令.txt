@@ -4,16 +4,16 @@ cd /d C:\research\neuralangelo_test
 
 python train.py ^
   --config=C:\research\neuralangelo_test\projects\neuralangelo\configs\custom\20260625_nonsmooth_ds4.yaml ^
-  --logdir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4_2 ^
+  --logdir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4_3 ^
   --single_gpu ^
   --show_pbar ^
   --total_time ^
   --record_command ^
   --plot_loss_curve ^
   --trainer.amp_config.enabled ^
-  --max_iter=400000 ^
+  --max_iter=500000 ^
   --validation_iter=100000 ^
-  --checkpoint.save_iter=100000 ^
+  --checkpoint.save_iter=20000 ^
   --optim.params.lr=5e-4 ^
   --trainer.loss_weight.curvature=0.0 ^
   --model.render.rand_rays=256 ^
@@ -25,7 +25,7 @@ python train.py ^
   --render_val_after_train ^
   --render_val_subset=10 ^
   --render_val_save_frames_only ^
-  --render_val_output_dir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4_2\renders_final_png
+  --render_val_output_dir=C:\research\neuralangelo_test\outputs\20260625_nonsmooth_ds4_3\renders_final_png
 
 --------------------------- extract_mesh ----------------------------
 
