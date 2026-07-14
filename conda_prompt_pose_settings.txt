@@ -1,0 +1,9 @@
+# Conda Prompt single-camera COLMAP pose settings.
+# Usually only edit VIDEO for a new input video.
+
+VIDEO=C:\Users\USER\OneDrive\桌面\DATASET\20260714_shadow_1.MP4
+SEQUENCE=auto
+DOWNSAMPLE_RATE=10
+SCENE_TYPE=outdoor
+VAL_SHORT_SIZE=300
+
