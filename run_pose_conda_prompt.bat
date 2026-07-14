@@ -8,7 +8,7 @@ if %ERRORLEVEL% EQU 0 (
   call conda activate neuralangelo_5080
 )
 
-set "SETTINGS=C:\neuralangelo\conda_prompt_pose_settings.txt"
+set "SETTINGS=C:\neuralangelo\指令_pose_setting"
 set "CHECK_ONLY=0"
 set "FORCE=0"
 
