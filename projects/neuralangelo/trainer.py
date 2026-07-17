@@ -34,6 +34,8 @@ class Trainer(BaseTrainer):
     def __init__(self, cfg, is_inference=True, seed=0):
         super().__init__(cfg, is_inference=is_inference, seed=seed)
         self.metrics = dict()
+        self.trace_nonfinite = bool(getattr(cfg.trainer, "trace_nonfinite", False))
+        self.model_module.trace_nonfinite = self.trace_nonfinite
         self.warm_up_end = cfg.optim.sched.warm_up_end
         self.cfg_gradient = cfg.model.object.sdf.gradient
         if cfg.model.object.sdf.encoding.type == "hashgrid" and cfg.model.object.sdf.encoding.coarse2fine.enabled:
@@ -45,6 +47,97 @@ class Trainer(BaseTrainer):
 
     def setup_scheduler(self, cfg, optim):
         return get_scheduler(cfg.optim, optim)
+
+    def model_forward(self, data):
+        total_loss = super().model_forward(data)
+        if self.trace_nonfinite:
+            self._trace_forward_nonfinite(data)
+        return total_loss
+
+    def _trace_forward_nonfinite(self, data):
+        """Stop at the first bad forward pass and save enough context to identify its source."""
+        ordered_names = (
+            "image_sampled",
+            "pose",
+            "intr",
+            "trace/center",
+            "trace/ray_unit",
+            "trace/near",
+            "trace/far",
+            "trace/object_dists",
+            "trace/object_sdfs",
+            "trace/object_gradients",
+            "hessians",
+            "trace/object_rgbs",
+            "trace/object_alphas",
+            "trace/background_dists",
+            "trace/background_densities",
+            "trace/background_rgbs",
+            "trace/background_alphas",
+            "trace/composite_rgbs",
+            "trace/composite_alphas",
+            "weights",
+            "rgb",
+        )
+        bad = []
+        for name in ordered_names:
+            value = data.get(name)
+            if not torch.is_tensor(value) or not (value.is_floating_point() or value.is_complex()):
+                continue
+            finite = torch.isfinite(value)
+            if not finite.all():
+                finite_values = value[finite]
+                if finite_values.numel():
+                    finite_min = finite_values.min().item()
+                    finite_max = finite_values.max().item()
+                else:
+                    finite_min = finite_max = float("nan")
+                bad.append(
+                    f"{name}: shape={tuple(value.shape)}, dtype={value.dtype}, "
+                    f"nan={torch.isnan(value).sum().item()}, "
+                    f"posinf={torch.isposinf(value).sum().item()}, "
+                    f"neginf={torch.isneginf(value).sum().item()}, "
+                    f"finite_min={finite_min}, finite_max={finite_max}"
+                )
+
+        for name, value in self.losses.items():
+            if torch.is_tensor(value) and not torch.isfinite(value).all():
+                bad.append(f"loss/{name}: value={value.detach().cpu().item()}")
+
+        if not bad:
+            return
+
+        sample_idx = data.get("idx")
+        if torch.is_tensor(sample_idx):
+            sample_idx = sample_idx.detach().cpu().tolist()
+        ray_idx = data.get("ray_idx")
+        if torch.is_tensor(ray_idx):
+            ray_idx_summary = {
+                "shape": tuple(ray_idx.shape),
+                "min": ray_idx.min().item(),
+                "max": ray_idx.max().item(),
+            }
+        else:
+            ray_idx_summary = None
+        lines = [
+            "Non-finite Neuralangelo forward tensor detected before backward.",
+            f"iteration={self.current_iteration}",
+            f"epoch={self.current_epoch}",
+            f"sample_idx={sample_idx}",
+            f"ray_idx={ray_idx_summary}",
+            f"progress={self.model_module.progress}",
+            f"s_var={self.model_module.s_var.detach().cpu().item()}",
+            *bad,
+        ]
+        message = "\n".join(lines)
+        print(message)
+        trace_path = os.path.join(self.cfg.logdir, "nonfinite_trace.txt")
+        with open(trace_path, "a", encoding="utf-8") as trace_file:
+            trace_file.write(message + "\n")
+        raise FloatingPointError(
+            f"Non-finite forward tensor detected at iteration {self.current_iteration}. "
+            f"See {trace_path}"
+        )
 
     def _compute_loss(self, data, mode=None):
         if mode == "train":

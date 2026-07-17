@@ -29,6 +29,7 @@ class Model(BaseModel):
         self.white_background = cfg_model.background.white
         self.with_background = cfg_model.background.enabled
         self.with_appear_embed = cfg_model.appear_embed.enabled
+        self.trace_nonfinite = False
         self.anneal_end = cfg_model.object.s_var.anneal_end
         self.outside_val = 1000. * (-1 if cfg_model.object.sdf.mlp.inside_out else 1)
         self.image_size_train = cfg_data.train.image_size
@@ -126,6 +127,7 @@ class Model(BaseModel):
             near, far, outside = self.get_dist_bounds(center, ray_unit)
         app, app_outside = self.get_appearance_embedding(sample_idx, ray_unit.shape[1])
         output_object = self.render_rays_object(center, ray_unit, near, far, outside, app, stratified=stratified)
+        output_background = None
         if self.with_background:
             output_background = self.render_rays_background(center, ray_unit, far, app_outside, stratified=stratified)
             # Concatenate object and background samples.
@@ -153,6 +155,27 @@ class Model(BaseModel):
             gradients=output_object["gradients"],  # [B,R,No,3]
             hessians=output_object["hessians"],  # [B,R,No,3]/None
         )
+        if self.trace_nonfinite and self.training:
+            output.update({
+                "trace/center": center,
+                "trace/ray_unit": ray_unit,
+                "trace/near": near,
+                "trace/far": far,
+                "trace/object_dists": output_object["dists"],
+                "trace/object_sdfs": output_object["sdfs"],
+                "trace/object_gradients": output_object["gradients"],
+                "trace/object_rgbs": output_object["rgbs"],
+                "trace/object_alphas": output_object["alphas"],
+                "trace/composite_rgbs": rgbs,
+                "trace/composite_alphas": alphas,
+            })
+            if output_background is not None:
+                output.update({
+                    "trace/background_dists": output_background["dists"],
+                    "trace/background_densities": output_background["densities"],
+                    "trace/background_rgbs": output_background["rgbs"],
+                    "trace/background_alphas": output_background["alphas"],
+                })
         return output
 
     def render_rays_object(self, center, ray_unit, near, far, outside, app, stratified=False):
@@ -199,6 +222,7 @@ class Model(BaseModel):
         # Collect output.
         output = dict(
             rgbs=rgbs,  # [B,R,3]
+            densities=densities,  # [B,R,N,1]
             dists=dists,  # [B,R,N,1]
             alphas=alphas,  # [B,R,N]
         )

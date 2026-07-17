@@ -44,6 +44,8 @@ def parse_args():
                         help='Record this training command to the log directory.')
     parser.add_argument('--plot_loss_curve', action='store_true',
                         help='Plot loss curves from the local loss history after training finishes.')
+    parser.add_argument('--trace_nonfinite', action='store_true',
+                        help='Stop at the first non-finite Neuralangelo forward tensor and write a diagnostic trace.')
     parser.add_argument('--render_val_after_train', action='store_true',
                         help='Render validation outputs after training finishes.')
     parser.add_argument('--render_val_subset', type=int, default=None,
@@ -84,6 +86,8 @@ def main():
 
     cfg_cmd = parse_cmdline_arguments(cfg_cmd)
     recursive_update_strict(cfg, cfg_cmd)
+    if args.trace_nonfinite:
+        cfg.trainer.trace_nonfinite = True
 
     # If args.single_gpu is set to True, we will disable distributed data parallel.
     if not args.single_gpu:
