@@ -231,8 +231,12 @@ class Model(BaseModel):
     @torch.no_grad()
     def get_dist_bounds(self, center, ray_unit):
         dist_near, dist_far = nerf_util.intersect_with_sphere(center, ray_unit, radius=1.)
+        # A ray from outside the sphere can have two real intersections that are
+        # both behind the camera. Treat it as outside as well; otherwise the
+        # negative far bound reverses background distance intervals and makes
+        # exp(-density * interval) overflow.
+        outside = (~torch.isfinite(dist_near)) | (~torch.isfinite(dist_far)) | (dist_far <= 0)
         dist_near.relu_()  # Distance (and thus depth) should be non-negative.
-        outside = dist_near.isnan()
         dist_near[outside], dist_far[outside] = 1, 1.2  # Dummy distances. Density will be set to 0.
         return dist_near, dist_far, outside
 

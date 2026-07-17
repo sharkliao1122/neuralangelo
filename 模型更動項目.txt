@@ -1,0 +1,810 @@
+# Neuralangelo 官方訓練模型與目前道路模型完整比較
+
+**日期：** 2026-07-17  
+**專案路徑：** `C:\research\neuralangelo_test`
+
+---
+
+## 目錄
+
+1. [比較基準與範圍](#1-比較基準與範圍)
+2. [結論摘要](#2-結論摘要)
+3. [差異分類總覽](#3-差異分類總覽)
+4. [核心網路架構比較](#4-核心網路架構比較)
+5. [Loss、Optimizer 與 Scheduler](#5-lossoptimizer-與-scheduler)
+6. [資料與訓練批次](#6-資料與訓練批次)
+7. [訓練記錄與輸出週期](#7-訓練記錄與輸出週期)
+8. [Source Code 修改內容](#8-source-code-修改內容)
+9. [官方支援設定與自行修改的區分](#9-官方支援設定與自行修改的區分)
+10. [Checkpoint 相容性](#10-checkpoint-相容性)
+11. [目前驗證狀態](#11-目前驗證狀態)
+12. [建議閱讀方式](#12-建議閱讀方式)
+
+---
+
+# 1. 比較基準與範圍
+
+## 1.1 NVIDIA 官方基準
+
+| 項目 | 內容 |
+|---|---|
+| Remote | `upstream = https://github.com/NVlabs/neuralangelo` |
+| Branch | `upstream/main` |
+| Commit | `94390b64683c067c620d9e075224ccfe582647d0` |
+| 日期 | 2023-10-02 |
+| Commit 說明 | `Merge pull request #133 from NVlabs/fix-sch` |
+
+## 1.2 目前程式版本
+
+| 項目 | 內容 |
+|---|---|
+| Branch | `main` |
+| HEAD | `e43e5bf18dd3f49476300a80d3e81c38c3053b47` |
+| Commit message | `0717` |
+
+## 1.3 尚未提交的模型修正
+
+檔案：
+
+```text
+projects\neuralangelo\model.py
+```
+
+修正內容：
+
+```text
+Ray / sphere 的 dist_far <= 0 邊界判定修正
+```
+
+## 1.4 實際道路 Run 設定
+
+| 項目 | 路徑 |
+|---|---|
+| Source config | `projects\neuralangelo\configs\custom\20260713_noshadow_1_ds10.yaml` |
+| Effective saved config | `outputs\20260713_noshadow_boundsfix_trace\config.yaml` |
+| Dataset | `C:\research\neuralangelo_test\datasets\20260713_noshadow_1_ds10` |
+
+## 1.5 本報告比較範圍
+
+本報告分為四個層次：
+
+1. NVIDIA 官方程式中的 Neuralangelo 網路架構。
+2. 目前 checkout 相對官方程式的 source-code 差異。
+3. 官方 `base.yaml` 與目前道路 run effective config 的差異。
+4. 設定差異對模型 shape、訓練行為與 checkpoint 的影響。
+
+---
+
+# 2. 結論摘要
+
+目前道路模型仍保留 NVIDIA 官方 Neuralangelo 的主要架構：
+
+- Hash-grid Neural SDF
+- 數值法 SDF gradient
+- IDR-style Neural RGB
+- Background NeRF
+- NeuS alpha conversion 與 alpha compositing
+- Render、eikonal、curvature 三類 loss
+- AdamW optimizer
+- Warmup 與 two-step learning-rate scheduler
+- Coarse-to-fine hash-grid activation
+
+目前**沒有改寫**以下核心網路結構：
+
+- SDF MLP 層數與 hidden dimension
+- RGB MLP 層數與 hidden dimension
+- BackgroundNeRF 層數與 hidden dimension
+
+## 2.1 目前相對官方 Base 的主要差異
+
+1. Appearance embedding：由關閉改為開啟。
+2. Coarse-to-fine 初始 active level：由 4 改為 8。
+3. Random rays：由 512 改為 256。
+4. Learning rate：由 `1e-3` 改為 `1e-4`。
+5. Curvature loss weight：由 `5e-4` 暫時改為 `0`。
+6. 訓練解析度、資料載入方式與記錄週期有調整。
+7. 新增 non-finite tracing 診斷功能。
+8. 新增 ray / sphere 後向交點 bounds 修正。
+
+> Appearance embedding 與 outdoor coarse-to-fine level 8 都是 NVIDIA 官方 `generate_config.py` 已支援的設定，不是自行設計的新網路結構。
+
+---
+
+# 3. 差異分類總覽
+
+| 分類 | 差異 | 是否改變模型參數 Shape | 是否改變 Forward 結果 |
+|---|---|---:|---:|
+| 網路實例化設定 | `appearance=True` | 是 | 是 |
+| 官方支援設定 | `initial_active_level=8` | 否 | 是 |
+| 訓練超參數 | `rand_rays=256` | 否 | 否，僅改變每步抽樣 |
+| 訓練超參數 | `learning_rate=1e-4` | 否 | 間接影響訓練 |
+| Loss 設定 | `curvature_weight=0` | 否 | 改變總 loss |
+| Source 修正 | `dist_far <= 0` bounds fix | 否 | 是，僅影響無有效前向交點的 rays |
+| 診斷工具 | non-finite tracing | 否 | 關閉時不影響 |
+| 輸出工具 | loss CSV、curve、command、render | 否 | 否 |
+| Windows 相容性 | 路徑、affinity、SIGALRM | 否 | 否 |
+
+---
+
+# 4. 核心網路架構比較
+
+## 4.1 Neural SDF
+
+| 項目 | NVIDIA 官方 Base | 目前道路模型 |
+|---|---:|---:|
+| Encoding | Hash-grid | Hash-grid |
+| Hash-grid levels | 16 | 16 |
+| Feature dim / level | 8 | 8 |
+| Min log resolution | 5 | 5 |
+| Max log resolution | 11 | 11 |
+| Dictionary log2 size | 22 | 22 |
+| Coordinate range | `[-2, 2]` | `[-2, 2]` |
+| SDF MLP hidden dim | 256 | 256 |
+| SDF MLP num_layers | 1 | 1 |
+| Activation | Softplus, `beta=100` | 相同 |
+| Geometric initialization | True | True |
+| Weight normalization | True | True |
+| Output bias | 0.5 | 0.5 |
+| `inside_out` | False | False |
+| Gradient mode | numerical | numerical |
+| Gradient taps | 4 | 4 |
+| Coarse-to-fine | True | True |
+| Initial active level | 4 | 8 |
+| Coarse-to-fine step | 5000 | 5000 |
+
+### 差異與影響
+
+- `initial_active_level=8` 是官方 `generate_config.py` 對 outdoor 場景的設定。
+- 相較官方 base 的 4 levels，訓練初期會啟用更多 hash-grid levels。
+- 初期可使用較高的空間頻率。
+- 不會增加參數數量，因為所有 hash-grid levels 原本就已建立。
+- SDF MLP 的層數、hidden dimension 與 activation 均未改動。
+
+---
+
+## 4.2 Neural RGB
+
+| 項目 | NVIDIA 官方 Base | 目前道路模型 |
+|---|---:|---:|
+| RGB mode | IDR | IDR |
+| View encoding | Spherical Harmonics | Spherical Harmonics |
+| SH levels | 3 | 3 |
+| View encoding dim | 16 | 16 |
+| Hidden dim | 256 | 256 |
+| Hidden layers | 4 | 4 |
+| Activation | ReLU | ReLU |
+| Weight normalization | True | True |
+| Output activation | Sigmoid | Sigmoid |
+| Appearance input | 關閉 | 開啟，8 維 |
+
+### 第一層輸入維度
+
+官方 base：
+
+```text
+points 3
++ normals 3
++ SH view 16
++ SDF feature 256
+= 278
+```
+
+目前道路模型：
+
+```text
+278 + appearance 8 = 286
+```
+
+### 差異與影響
+
+- Appearance embedding 用於吸收道路影片中的自動曝光與白平衡差異。
+- 此設定符合官方 `generate_config.py` 的 `--auto_exposure_wb` 行為。
+- NeuralRGB 第一層 weight 的 input dimension 增加 8。
+- 這是 effective config 導致的實例化 shape 差異，不是 NeuralRGB class 的程式改寫。
+- Resume、checkpoint extraction 或 render 時，必須使用該 run 保存的 `config.yaml`。
+- 若改用 `appearance=False` 的 config，會發生第一層 weight shape mismatch。
+
+---
+
+## 4.3 Appearance Embedding
+
+| 項目 | NVIDIA 官方 Base | 目前道路模型 |
+|---|---:|---:|
+| Enabled | False | True |
+| Embedding dimension | 8，但未使用 | 8 |
+| Number of images | 未設定 | 239 |
+| Object embedding | 無 | `[239, 8]` |
+| Background embedding | 無 | `[239, 8]` |
+
+### 新增參數量
+
+Embedding parameters：
+
+```text
+239 × 8 × 2 = 3,824
+```
+
+MLP 第一層增加的輸入權重：
+
+```text
+NeuralRGB：       256 × 8 = 2,048
+Background RGB： 128 × 8 = 1,024
+```
+
+總新增參數：
+
+```text
+3,824 + 2,048 + 1,024 = 6,896
+```
+
+目前啟動時模型參數量：
+
+```text
+366,709,628
+```
+
+保持相同資料與其他設定，只關閉 appearance 時的推算參數量：
+
+```text
+366,702,732
+```
+
+---
+
+## 4.4 Background NeRF
+
+| 項目 | NVIDIA 官方 Base | 目前道路模型 |
+|---|---:|---:|
+| Enabled | True | True |
+| White background | False | False |
+| Position encoding | Fourier，10 levels | 相同 |
+| Position input dim | `4 + 80 = 84` | 相同 |
+| Feature MLP layers | 8 | 8 |
+| Feature hidden dim | 256 | 256 |
+| Skip connection | Layer 4 | Layer 4 |
+| Density activation | Softplus | Softplus |
+| View encoding | SH，3 levels | 相同 |
+| RGB MLP layers | 2 | 2 |
+| RGB hidden dim | 128 | 128 |
+| RGB output | Sigmoid | Sigmoid |
+| Appearance input | 無 | 8 維 |
+| Background samples / ray | 32 | 32 |
+
+### Background RGB 第一層輸入
+
+官方 base：
+
+```text
+feature 256 + SH view 16 = 272
+```
+
+目前道路模型：
+
+```text
+272 + appearance 8 = 280
+```
+
+BackgroundNeRF 的層數、hidden dimension 與 density activation 均未更改。
+
+---
+
+## 4.5 Rendering 與取樣
+
+| 項目 | NVIDIA 官方 Base | 目前道路模型 |
+|---|---:|---:|
+| Random rays / batch image | 512 | 256 |
+| Object coarse samples | 64 | 64 |
+| Fine samples / hierarchy | 16 | 16 |
+| Hierarchy rounds | 4 | 4 |
+| Object samples total | `64 + 16×4 = 128` | 128 |
+| Background samples | 32 | 32 |
+| Combined samples / ray | 160 | 160 |
+| Stratified sampling | True | True |
+| NeuS `s_var` init | 3.0 | 3.0 |
+| Cosine anneal end | 0.1 | 0.1 |
+
+### 差異與影響
+
+- `rand_rays` 由 512 降為 256，以降低 Windows 單 GPU 的記憶體與單步運算成本。
+- 每一步使用的 ray 較少，因此梯度抽樣變異可能較高。
+- 此修改不屬於模型 layer 變更。
+- Object 與 background 的 sample 數量與官方相同。
+- `max_iter` 必須維持 500,000，因為：
+
+```text
+progress = current_iteration / max_iter
+```
+
+此值會控制 NeuS annealing。
+
+---
+
+# 5. Loss、Optimizer 與 Scheduler
+
+| 項目 | NVIDIA 官方 Base | 目前道路測試 |
+|---|---:|---:|
+| Render loss | `L1 × 3` | 相同 |
+| Render weight | 1.0 | 1.0 |
+| Eikonal weight | 0.1 | 0.1 |
+| Curvature weight | `5e-4` | `0.0` |
+| Optimizer | AdamW | AdamW |
+| Learning rate | `1e-3` | `1e-4` |
+| Weight decay | `1e-2` | `1e-2` |
+| Warmup end | 5000 | 5000 |
+| LR steps | 300000、400000 | 相同 |
+| Gamma | 10.0 | 10.0 |
+| AMP | False | False |
+| EMA | False | False |
+| `max_iter` | 500000 | 500000 |
+
+## 5.1 修改原因
+
+- `learning_rate=1e-4`：NaN 調查期間使用的保守設定，不是 layer 架構修改。
+- `curvature=0`：暫時隔離 render/background NaN 的診斷設定。
+- 官方正式 curvature weight 為 `5e-4`。
+- Bounds fix 穩定後，仍須測試 curvature 是否恢復為 `1e-4` 或官方 `5e-4`。
+- `AMP=False` 與官方 base 相同。
+- `torch.cuda.amp` 的 FutureWarning 僅為 API 棄用警告。
+
+---
+
+# 6. 資料與訓練批次
+
+| 項目 | NVIDIA 官方 Base | 目前道路模型 |
+|---|---:|---:|
+| Dataset type | NeRF Blender | `projects.neuralangelo.data` |
+| Dataset | Synthetic Lego | `20260713_noshadow_1_ds10` |
+| Images | 未指定 | 239 |
+| Source image size | 800×800 example | 2979×5296 |
+| Effective train size | 800×800 | 1080×1920 |
+| Validation size | 400×400 | 300×533 |
+| Train batch size | 2 | 2 |
+| Validation batch size | 2 | 2 |
+| Preload | True | False |
+| `num_workers` | 4 | 0 |
+| Multi-epoch loader | True | False |
+| Readjust center | `[0,0,0]` | `[0,0,0]` |
+| Readjust scale | 1.0 | 1.0 |
+
+## 6.1 說明
+
+以下設定均屬 NVIDIA 官方真實場景資料流程所支援：
+
+- `projects.neuralangelo.data`
+- Outdoor `initial_active_level=8`
+- `appearance=True`
+- 自訂 train / validation 解析度
+- `data.readjust.center`
+- `data.readjust.scale`
+
+解析度來源：
+
+- Source custom config：完整訓練尺寸為 `2979×5296`
+- 實際執行命令覆寫為：`1080×1920`
+
+Windows 穩定性設定：
+
+```text
+preload=False
+num_workers=0
+multi_epoch_loader=False
+```
+
+這些設定用於避免 preload deadlock 或 dataloader 啟動錯誤，不改變網路架構。
+
+---
+
+# 7. 訓練記錄與輸出週期
+
+| 項目 | NVIDIA 官方 Base | 目前 Bounds-fix 測試 |
+|---|---:|---:|
+| W&B scalar interval | 100 | 10 |
+| Validation interval | 5000 | 1000 |
+| Checkpoint interval | 20000 | 1000 |
+| Local `loss_history.csv` | 無 | 有 |
+| Command recording | 無 | 有，可選 |
+| Total-time recording | 無 | 有，可選 |
+| Loss curve PNG | 無 | 有，可選 |
+| Post-train validation render | 無 | 有，可選 |
+| Non-finite tracing | 無 | 有，可選 |
+
+## 7.1 影響
+
+- 診斷期間縮短 scalar、validation 與 checkpoint interval，方便提早發現問題。
+- 這些功能不會改變 model parameters。
+- Non-finite tracing 會增加中間 tensor 保留與 `isfinite` 檢查成本。
+
+---
+
+# 8. Source Code 修改內容
+
+## 8.1 `train.py`
+
+### 官方功能
+
+- 讀取 config
+- 建立 trainer、dataloader 與 model
+- 載入或 resume checkpoint
+- 初始化 W&B
+- 開始訓練
+
+### 目前新增
+
+| 參數 | 功能 |
+|---|---|
+| `--total_time` | 記錄 wall-clock time |
+| `--record_command` | 保存完整訓練命令與 metadata |
+| `--plot_loss_curve` | 輸出 loss curve |
+| `--render_val_after_train` | 訓練後自動執行 validation render |
+| `--render_val_subset` | 限制 render frame 數 |
+| `--render_val_save_frames_only` | 以 PNG 取代 MP4 |
+| `--trace_nonfinite` | 啟用 NaN / Inf tracing |
+
+### 影響
+
+除 `trace_nonfinite` 外，其餘主要為記錄與輸出功能，不改變 forward 或 backward。
+
+---
+
+## 8.2 `projects\nerf\trainers\base.py`
+
+### 目前新增
+
+每次 scalar logging 時，同步追加：
+
+```text
+loss_history.csv
+```
+
+### 影響
+
+不改變 loss 計算與 optimizer step。
+
+---
+
+## 8.3 `projects\neuralangelo\trainer.py`
+
+### 目前新增
+
+- Non-finite forward tracing
+- Backward 前檢查：
+  - input
+  - pose
+  - SDF
+  - gradient
+  - alpha
+  - weights
+  - RGB
+  - loss
+- 記錄：
+  - iteration
+  - epoch
+  - sample index
+  - ray index
+  - progress
+  - `s_var`
+- 異常時寫入：
+
+```text
+<logdir>\nonfinite_trace.txt
+```
+
+- 寫入後立即停止，避免污染 optimizer state。
+- Validation 可輸出 MP4 或 PNG frames。
+- FFmpeg 不可用時，自動 fallback 至 PNG。
+- 增加 NumPy 2 與 skvideo 相容處理。
+
+### 影響
+
+- Tracing 關閉時，不改變官方 loss 與 optimizer 邏輯。
+- Tracing 開啟時，會增加檢查成本。
+- 可在第一次非有限 forward tensor 出現時停止。
+
+---
+
+## 8.4 `projects\neuralangelo\model.py`：Tracing
+
+### 目前新增
+
+- `self.trace_nonfinite` 開關。
+- 診斷模式下額外回傳 object 與 background rendering 中間 tensor。
+- Background render output 額外暴露 densities。
+
+### 影響
+
+- 不新增參數。
+- 不改變 layer shape。
+- 僅在 training 且 tracing 開啟時增加回傳內容與暫時記憶體。
+
+---
+
+## 8.5 `projects\neuralangelo\model.py`：Ray / Sphere Bounds Fix
+
+### NVIDIA 官方原始判定
+
+```python
+outside = dist_near.isnan()
+```
+
+### 目前修正
+
+```python
+outside = (
+    (~torch.isfinite(dist_near))
+    | (~torch.isfinite(dist_far))
+    | (dist_far <= 0)
+)
+```
+
+對 outside ray 使用官方原本已有的 dummy bounds：
+
+```python
+dist_near = 1.0
+dist_far = 1.2
+```
+
+### 問題原因
+
+道路相機可能位於單位球外。當相機朝道路前方拍攝時，全域球心可能位於相機後方。
+
+此時 ray 可能：
+
+1. 與球面有兩個實數交點。
+2. 但兩個交點都位於相機後方。
+3. `dist_near` 並非 NaN。
+4. `dist_far <= 0`。
+5. 官方判定因此未將該 ray 視為 outside。
+
+負的 far distance 會使 background distances 反向，產生負 distance interval：
+
+```text
+alpha = 1 - exp(-density × interval)
+```
+
+當 interval 為負值時，指數項可能溢位，導致：
+
+```text
+巨大負值或 -Inf alpha
+→ composite weights 出現 ±Inf
+→ RGB 出現 NaN
+→ render loss 與 total loss 出現 NaN
+```
+
+### 實際 Trace 結果
+
+```text
+iteration = 31
+sample_idx = [230, 43]
+
+background_alphas：
+- 1 個 -Inf
+- finite_min 約 -1.216e9
+
+weights：
+- 同時出現 +Inf 與 -Inf
+
+RGB：
+- 出現 NaN
+
+render loss：
+- NaN
+
+total loss：
+- NaN
+```
+
+Frame 230 的正規化 camera radius：
+
+```text
+約 1.0058
+```
+
+此值符合相機位於單位球外邊界的情況。
+
+### 修正性質
+
+- 這是目前唯一會直接改變特定 rays forward rendering 結果的 source-code 修正。
+- 不改變可訓練參數。
+- 不改變 checkpoint tensor shape。
+- 有效的前向球面交點不受影響。
+- 只處理：
+  - 交點不存在
+  - 交點為非有限值
+  - 所有交點均位於相機後方
+- 不需要翻轉 `transforms.json` 或全域座標軸。
+
+---
+
+## 8.6 Windows 相容性修改
+
+| 修改 | 說明 |
+|---|---|
+| `TORCH_HOME` | 可從 `USERPROFILE` 或 `Path.home()` 取得，不再只依賴 `HOME` |
+| W&B group/name | 使用 `pathlib` 處理 Windows 路徑 |
+| CPU affinity | Windows 無 `os.sched_setaffinity` 時跳過 |
+| Timeout watchdog | Windows 無 `SIGALRM` 時停用 |
+
+### 影響
+
+僅改善 Windows 啟動與路徑相容性，不改變 Neuralangelo 網路或 loss。
+
+---
+
+# 9. 官方支援設定與自行修改的區分
+
+以下設定雖不同於官方 `base.yaml`，但皆由未修改的官方：
+
+```text
+projects\neuralangelo\scripts\generate_config.py
+```
+
+所產生或支援：
+
+- `data.type = projects.neuralangelo.data`
+- 真實影像 `transforms.json + images` 資料格式
+- Outdoor：`inside_out=False`
+- Outdoor：`coarse2fine.init_active_level=8`
+- Auto exposure / white balance：
+  - `appearance=True`
+  - `appearance_dim=8`
+- 根據原始照片產生 train / validation image size
+- `data.readjust.center`
+- `data.readjust.scale`
+
+因此，上述項目不應全部視為 fork 對 NVIDIA 官方模型的 source-code 改造。
+
+---
+
+# 10. Checkpoint 相容性
+
+## 10.1 Tracing 與 Bounds Fix
+
+- 不新增 trainable parameters。
+- 不改變 `state_dict` key。
+- 不改變 tensor shape。
+- 與相同 effective config 的 checkpoint 相容。
+
+## 10.2 Appearance Embedding
+
+Appearance setting 會改變：
+
+- `state_dict`
+- NeuralRGB 第一層 shape
+- Background RGB 第一層 shape
+- Object appearance embedding
+- Background appearance embedding
+
+因此：
+
+- `appearance=True` 的 checkpoint 必須搭配 `appearance=True` 的 run config。
+- 官方 base 的 `appearance=False` config 無法直接 strict-load 目前道路 checkpoint。
+
+## 10.3 Extraction 與 Render 應使用的設定
+
+應使用：
+
+```text
+outputs\<run_name>\config.yaml
+```
+
+不應只使用：
+
+```text
+source custom config
+```
+
+或：
+
+```text
+官方 base.yaml
+```
+
+---
+
+# 11. 目前驗證狀態
+
+## 11.1 已確認
+
+- 官方 upstream commit 已由本機 `upstream/main` 確認。
+- 核心 SDF、RGB 與 BackgroundNeRF layer definitions 與官方相同。
+- Effective config 與官方 base 的差異已由 saved config 核對。
+- Non-finite tracing 已成功在 backward 前定位第一個異常 tensor。
+- NaN 根因已定位至 background ray 的負 distance interval。
+- Frame 230 位於單位球邊界外。
+- 道路相機軌跡連續。
+- 沒有 180 度 pose 翻轉的證據。
+- Bounds fix 不改變模型參數或 checkpoint shape。
+
+## 11.2 尚待確認
+
+- 套用 bounds fix 後，是否能穩定通過原失敗點 iteration 31。
+- 是否能完成至少 1,000 iterations。
+- 是否能保存乾淨 checkpoint。
+- Curvature weight 是否可由 0 恢復至 `1e-4` 或官方 `5e-4`。
+- 是否能完成正式 500,000 iterations。
+- 最終 validation render 品質。
+- 最終 mesh extraction 品質。
+
+---
+
+# 12. 建議閱讀方式
+
+## 12.1 真正的網路結構差異
+
+```text
+Appearance embeddings 開啟
+```
+
+影響：
+
+- 新增 embedding parameters。
+- NeuralRGB 第一層 input shape 增加。
+- Background RGB 第一層 input shape 增加。
+
+## 12.2 真正的 Forward 行為修正
+
+```text
+dist_far <= 0 的 ray / sphere outside 判定
+```
+
+影響：
+
+- 修正全部交點位於相機後方的 rays。
+- 避免負 distance interval。
+- 避免 background alpha、weights、RGB 與 loss 產生 Inf / NaN。
+
+## 12.3 訓練超參數差異
+
+- Learning rate
+- Curvature weight
+- Random rays
+- 訓練與驗證解析度
+- Dataloader 設定
+- Logging、validation 與 checkpoint interval
+
+## 12.4 工具與診斷差異
+
+- Total time recording
+- Command recording
+- Loss CSV
+- Loss curve
+- Post-train validation render
+- Non-finite trace
+
+## 12.5 保持 NVIDIA 官方不變的核心
+
+- SDF hash-grid 與 SDF MLP
+- NeuralRGB hidden structure
+- BackgroundNeRF hidden structure
+- Object 與 background sampling counts
+- NeuS alpha 主公式
+- Render、eikonal、curvature loss 類型
+- AdamW optimizer
+- Learning-rate scheduler 類型
+
+---
+
+# 最終判定
+
+目前道路版本不是重新設計的 Neuralangelo 網路，而是：
+
+1. 使用 NVIDIA 官方支援的真實 outdoor 場景設定。
+2. 開啟官方已支援的 appearance embedding。
+3. 調整訓練超參數與 Windows dataloader 設定。
+4. 新增記錄、輸出與 non-finite 診斷工具。
+5. 修正官方 ray / sphere 判定未處理 `dist_far <= 0` 的邊界情況。
+
+在所有修改中，最需要獨立驗證的 source-code 行為變更是：
+
+```text
+dist_far <= 0 bounds fix
+```
+
+下一階段的最低驗證目標為：
+
+```text
+穩定通過 iteration 31
+→ 完成至少 1,000 iterations
+→ 保存可正常載入的 checkpoint
+→ 再逐步恢復 curvature loss
+```
