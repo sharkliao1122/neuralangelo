@@ -17,6 +17,8 @@
 *.exp
 *.swp
 *.pyc
+*.jpg
+
 # Credential information that should never be checked in
 *.secret
 .env
