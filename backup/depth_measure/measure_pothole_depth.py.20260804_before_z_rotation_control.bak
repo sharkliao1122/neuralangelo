@@ -390,9 +390,6 @@ def build_depth_preview_fragment(preview, summary):
     <label class="form-label">Point size
       <input class="form-range" type="range" min="1" max="5" step="1" value="2" data-role="point-size">
     </label>
-    <label class="form-label">Z rotation <span data-role="z-rotation-value">0°</span>
-      <input class="form-range" type="range" min="-180" max="180" step="1" value="0" data-role="z-rotation">
-    </label>
   </div>
 
   <div class="depth-map-stage">
@@ -406,7 +403,7 @@ def build_depth_preview_fragment(preview, summary):
     <span><span data-role="color-max"></span> deep</span>
   </div>
   <div class="text-small text-muted">
-    Drag to orbit; Shift + horizontal drag rotates around local Z; wheel zooms. +Z is above the road and -Z is pothole/down.
+    Road-aligned local axes: +Z is above the road and -Z is pothole/down. Hover coordinates remain original input XYZ.
   </div>
 </div>
 
@@ -464,8 +461,6 @@ def build_depth_preview_fragment(preview, summary):
   const ctx = canvas.getContext("2d");
   const readout = root.querySelector('[data-role="readout"]');
   const sizeInput = root.querySelector('[data-role="point-size"]');
-  const rollInput = root.querySelector('[data-role="z-rotation"]');
-  const rollValue = root.querySelector('[data-role="z-rotation-value"]');
   const points = preview.points;
   const colors = points.map((p) => `rgb(${{p[5]}},${{p[6]}},${{p[7]}})`);
   const roadFrame = summary.road_aligned_frame;
@@ -499,9 +494,6 @@ def build_depth_preview_fragment(preview, summary):
   const projected = new Array(points.length);
   let yaw = -0.72;
   let pitch = -0.58;
-  let roll = 0.0;
-  let rollCos = 1.0;
-  let rollSin = 0.0;
   let zoom = 1.0;
   let pointSize = Number(sizeInput.value);
   let pointerDown = false;
@@ -516,15 +508,6 @@ def build_depth_preview_fragment(preview, summary):
   readout.textContent = summary.deepest_point_xyz
     ? `deepest signed height ${{fmt(summary.deepest_point_signed_distance)}} at (${{summary.deepest_point_xyz.map(fmt).join(", ")}})`
     : "Depth map";
-
-  function setRoll(value) {{
-    roll = Math.atan2(Math.sin(value), Math.cos(value));
-    rollCos = Math.cos(roll);
-    rollSin = Math.sin(roll);
-    const degrees = Math.round(roll * 180 / Math.PI);
-    rollInput.value = String(degrees);
-    rollValue.textContent = `${{degrees}}°`;
-  }}
 
   function toRoadAligned(coord) {{
     const relative = [
@@ -558,12 +541,10 @@ def build_depth_preview_fragment(preview, summary):
     const x = coord[0] - center[0];
     const y = coord[1] - center[1];
     const z = coord[2] - center[2];
-    const rolledX = x * rollCos - y * rollSin;
-    const rolledY = x * rollSin + y * rollCos;
-    const rx = rolledX * cy + z * sy;
-    const rz = -rolledX * sy + z * cy;
-    const ry = rolledY * cp - rz * sp;
-    const depthZ = rolledY * sp + rz * cp;
+    const rx = x * cy + z * sy;
+    const rz = -x * sy + z * cy;
+    const ry = y * cp - rz * sp;
+    const depthZ = y * sp + rz * cp;
     return [cx + rx * scale, midY - ry * scale, depthZ];
   }}
 
@@ -571,11 +552,9 @@ def build_depth_preview_fragment(preview, summary):
     const x = direction[0];
     const y = direction[1];
     const z = direction[2];
-    const rolledX = x * rollCos - y * rollSin;
-    const rolledY = x * rollSin + y * rollCos;
-    const rx = rolledX * cy + z * sy;
-    const rz = -rolledX * sy + z * cy;
-    const ry = rolledY * cp - rz * sp;
+    const rx = x * cy + z * sy;
+    const rz = -x * sy + z * cy;
+    const ry = y * cp - rz * sp;
     return [rx, -ry];
   }}
 
@@ -769,12 +748,8 @@ def build_depth_preview_fragment(preview, summary):
   canvas.addEventListener("pointermove", (event) => {{
     const rect = canvas.getBoundingClientRect();
     if (pointerDown) {{
-      if (event.shiftKey) {{
-        setRoll(roll + (event.clientX - lastX) * 0.008);
-      }} else {{
-        yaw += (event.clientX - lastX) * 0.008;
-        pitch = Math.max(-1.45, Math.min(1.45, pitch + (event.clientY - lastY) * 0.008));
-      }}
+      yaw += (event.clientX - lastX) * 0.008;
+      pitch = Math.max(-1.45, Math.min(1.45, pitch + (event.clientY - lastY) * 0.008));
       lastX = event.clientX;
       lastY = event.clientY;
       setPressed("");
@@ -796,7 +771,6 @@ def build_depth_preview_fragment(preview, summary):
   root.querySelectorAll("[data-view]").forEach((button) => {{
     button.addEventListener("click", () => {{
       const view = button.dataset.view;
-      setRoll(0);
       if (view === "top") {{
         yaw = 0;
         pitch = 0;
@@ -825,18 +799,12 @@ def build_depth_preview_fragment(preview, summary):
     pointSize = Number(sizeInput.value);
     render();
   }});
-  rollInput.addEventListener("input", () => {{
-    setRoll(Number(rollInput.value) * Math.PI / 180);
-    setPressed("");
-    render();
-  }});
 
   if ("ResizeObserver" in window) {{
     new ResizeObserver(resizeCanvas).observe(canvas);
   }} else {{
     window.addEventListener("resize", resizeCanvas);
   }}
-  setRoll(0);
   setPressed("oblique");
   resizeCanvas();
 }})();
