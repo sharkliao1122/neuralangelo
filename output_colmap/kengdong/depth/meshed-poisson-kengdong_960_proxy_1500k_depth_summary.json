@@ -187,10 +187,6 @@
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_depth_preview_points.json",
     "preview_points": 60000
   },
-  "deepest_marker": {
-    "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_deepest_point_marker.ply",
-    "marker_size": 0.16
-  },
   "preview_html": {
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_depth_preview.html"
   }

@@ -1233,10 +1233,7 @@ def parse_args():
         "--deepest-marker",
         type=Path,
         default=None,
-        help=(
-            "Optional small red PLY cube marker centered at the deepest point. "
-            "It is not generated unless this option is explicitly supplied."
-        ),
+        help="Optional small red PLY cube marker centered at the deepest point.",
     )
     parser.add_argument("--marker-size", type=float, default=0.16)
     parser.add_argument("--print-bounds-only", action="store_true")
@@ -1258,6 +1255,8 @@ def apply_default_output_paths(args):
         args.preview_json = output_dir / f"{stem}_depth_preview_points.json"
     if args.preview_html is None:
         args.preview_html = output_dir / f"{stem}_depth_preview.html"
+    if args.deepest_marker is None:
+        args.deepest_marker = output_dir / f"{stem}_deepest_point_marker.ply"
 
 
 def main():
