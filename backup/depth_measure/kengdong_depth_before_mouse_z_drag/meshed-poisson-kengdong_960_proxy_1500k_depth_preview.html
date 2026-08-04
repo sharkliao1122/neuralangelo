@@ -42,7 +42,7 @@
     <span><span data-role="color-max"></span> deep</span>
   </div>
   <div class="text-small text-muted">
-    Left-drag orbits X/Y; right-drag or Shift + left-drag rotates around local Z; wheel zooms. +Z is above the road and -Z is pothole/down.
+    Drag to orbit; Shift + horizontal drag rotates around local Z; wheel zooms. +Z is above the road and -Z is pothole/down.
   </div>
 </div>
 
@@ -141,7 +141,6 @@
   let zoom = 1.0;
   let pointSize = Number(sizeInput.value);
   let pointerDown = false;
-  let dragMode = "orbit";
   let lastX = 0;
   let lastY = 0;
 
@@ -391,9 +390,7 @@
   }
 
   canvas.addEventListener("pointerdown", (event) => {
-    if (event.button === 2) event.preventDefault();
     pointerDown = true;
-    dragMode = event.button === 2 || event.shiftKey ? "roll" : "orbit";
     lastX = event.clientX;
     lastY = event.clientY;
     canvas.setPointerCapture(event.pointerId);
@@ -405,13 +402,10 @@
   canvas.addEventListener("pointerleave", () => {
     pointerDown = false;
   });
-  canvas.addEventListener("contextmenu", (event) => {
-    event.preventDefault();
-  });
   canvas.addEventListener("pointermove", (event) => {
     const rect = canvas.getBoundingClientRect();
     if (pointerDown) {
-      if (dragMode === "roll") {
+      if (event.shiftKey) {
         setRoll(roll + (event.clientX - lastX) * 0.008);
       } else {
         yaw += (event.clientX - lastX) * 0.008;
