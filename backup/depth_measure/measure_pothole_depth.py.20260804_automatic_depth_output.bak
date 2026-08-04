@@ -415,15 +415,6 @@ def parse_args():
     )
     parser.add_argument("input", type=Path, help="Input mesh or point-cloud file, such as .ply")
     parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=None,
-        help=(
-            "Directory for depth-related outputs. Defaults to a 'depth' "
-            "subdirectory beside the input file."
-        ),
-    )
-    parser.add_argument(
         "--crop",
         type=float,
         nargs=6,
@@ -497,26 +488,10 @@ def parse_args():
     return parser.parse_args()
 
 
-def apply_default_output_paths(args):
-    output_dir = args.output_dir
-    if output_dir is None:
-        output_dir = args.input.parent / "depth"
-
-    stem = args.input.stem
-    if args.summary_json is None:
-        args.summary_json = output_dir / f"{stem}_depth_summary.json"
-    if args.colored_ply is None:
-        args.colored_ply = output_dir / f"{stem}_depth_map.ply"
-    if args.preview_json is None:
-        args.preview_json = output_dir / f"{stem}_depth_preview_points.json"
-
-
 def main():
     args = parse_args()
     if not args.input.is_file():
         raise FileNotFoundError(f"Input file not found: {args.input}")
-    args.input = args.input.resolve()
-    apply_default_output_paths(args)
     if not (0.0 < args.bottom_percent <= 50.0):
         raise ValueError("--bottom-percent must be > 0 and <= 50")
 
