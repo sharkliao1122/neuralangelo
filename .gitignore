@@ -55,6 +55,16 @@ Thumbs.db
 *.ply
 *.obj
 
+# COLMAP output: keep portable reports and transforms visible to Git while
+# excluding large, machine-local, or automatically regenerated artifacts.
+/output_colmap/**/*.png
+/output_colmap/**/*.vis
+/output_colmap/**/best_model.txt
+/output_colmap/**/reconstruction_parameters.txt
+/output_colmap/**/sparse/**/project.ini
+/output_colmap/**/undistorted/run-colmap-*.sh
+/output_colmap/**/undistorted/stereo/*.cfg
+
 
 # Dataset / raw data
 /datasets/

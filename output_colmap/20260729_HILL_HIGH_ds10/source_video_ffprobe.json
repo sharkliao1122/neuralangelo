@@ -1,0 +1,33 @@
+{
+    "programs": [
+
+    ],
+    "stream_groups": [
+
+    ],
+    "streams": [
+        {
+            "codec_name": "hevc",
+            "width": 3840,
+            "height": 2160,
+            "pix_fmt": "yuvj420p",
+            "r_frame_rate": "60000/1001",
+            "avg_frame_rate": "60000/1001",
+            "duration": "37.987950",
+            "nb_frames": "2277",
+            "nb_read_frames": "2277",
+            "tags": {
+                "creation_time": "2026-07-29T09:37:37.000000Z",
+                "language": "eng",
+                "handler_name": "GoPro H.265",
+                "encoder": "GoPro H.265 encoder",
+                "timecode": "17:36:33:52"
+            }
+        }
+    ],
+    "format": {
+        "duration": "37.987950",
+        "size": "261658145",
+        "bit_rate": "55103398"
+    }
+}

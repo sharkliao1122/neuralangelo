@@ -23,7 +23,15 @@ conda activate neuralangelo_5080
 cd /d C:\research\neuralangelo_test\third_party\colmap\scripts\python
 
 python visualize_model.py ^
-  --input_model C:\neuralangelo\datasets\20260713_noshadow_1_ds10\sparse ^
+  --input_model C:\research\neuralangelo_test\datasets\20260714_shadow_1_ds10\sparse ^
+  --input_format .bin
+
+python visualize_model.py ^
+  --input_model C:\research\neuralangelo_test\datasets\20260713_noshadow_1_ds10\sparse ^
+  --input_format .bin
+
+python visualize_model.py ^
+  --input_model C:\research\neuralangelo_test\datasets\20260713_noshadow_1_ds10\sparse ^
   --input_format .bin
 
 --------------------------- SHOW POSE ( PC )----------------------------
@@ -31,7 +39,7 @@ conda activate neuralangelo_5080
 cd C:\neuralangelo\third_party\colmap\scripts\python
 
 python visualize_model.py ^
-  --input_model C:\neuralangelo\datasets\20260713_noshadow_1_ds10\sparse ^
+  --input_model C:\research\neuralangelo_test\datasets\20260625_nonsmooth_ds4\sparse ^
   --input_format .bin
 
 
