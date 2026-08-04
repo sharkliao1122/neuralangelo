@@ -137,43 +137,6 @@ def plane_values(points, normal, offset):
     )
 
 
-def build_road_aligned_frame(normal, offset, reference_points):
-    local_z = np.asarray(normal, dtype=np.float64)
-    local_z /= vector_norm(local_z)
-
-    x_hint = np.array([1.0, 0.0, 0.0], dtype=np.float64)
-    local_x = x_hint - float(np.dot(x_hint, local_z)) * local_z
-    if vector_norm(local_x) < 0.1:
-        x_hint = np.array([0.0, 1.0, 0.0], dtype=np.float64)
-        local_x = x_hint - float(np.dot(x_hint, local_z)) * local_z
-    local_x /= vector_norm(local_x)
-    local_y = np.cross(local_z, local_x)
-    local_y /= vector_norm(local_y)
-
-    origin = np.asarray(reference_points, dtype=np.float64).mean(axis=0)
-    origin_signed_height = float(np.dot(origin, local_z) + offset)
-    origin = origin - origin_signed_height * local_z
-    world_to_local = np.vstack([local_x, local_y, local_z])
-
-    return {
-        "origin": origin.tolist(),
-        "x_axis": local_x.tolist(),
-        "y_axis": local_y.tolist(),
-        "z_axis_up": local_z.tolist(),
-        "negative_z": "pothole_down",
-        "world_to_local_rotation": world_to_local.tolist(),
-    }
-
-
-def road_aligned_transform(frame):
-    rotation = np.asarray(frame["world_to_local_rotation"], dtype=np.float64)
-    origin = np.asarray(frame["origin"], dtype=np.float64)
-    transform = np.eye(4, dtype=np.float64)
-    transform[:3, :3] = rotation
-    transform[:3, 3] = -rotation @ origin
-    return transform
-
-
 def bounds_mask(points, bounds):
     if bounds is None:
         return np.ones(len(points), dtype=bool)
@@ -244,45 +207,6 @@ def export_colored_ply(input_path, output_path, normal, offset, color_mask, colo
     }
 
 
-def export_road_aligned_colored_ply(
-    input_path,
-    output_path,
-    normal,
-    offset,
-    color_mask,
-    color_max_depth,
-    road_frame,
-):
-    geometry = trimesh.load(str(input_path), process=False)
-    if isinstance(geometry, trimesh.Scene):
-        raise ValueError("--aligned-ply currently supports a single mesh or point cloud, not a Scene")
-    if not hasattr(geometry, "vertices"):
-        raise ValueError(f"Unsupported geometry type for aligned export: {type(geometry).__name__}")
-
-    vertices = np.asarray(geometry.vertices, dtype=np.float64)
-    if len(vertices) != len(color_mask):
-        raise ValueError("Internal vertex count mismatch while exporting road-aligned PLY")
-
-    signed = plane_values(vertices, normal, offset)
-    depths = np.maximum(0.0, -signed)
-    neutral = np.array([155, 155, 155, 255], dtype=np.uint8)
-    rgba = np.repeat(neutral[None, :], len(vertices), axis=0)
-    rgba[color_mask] = depth_to_rgba(depths[color_mask], color_max_depth)
-    geometry.visual.vertex_colors = rgba
-    geometry.apply_transform(road_aligned_transform(road_frame))
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    geometry.export(str(output_path))
-    aligned_vertices = np.asarray(geometry.vertices, dtype=np.float64)
-    return {
-        "path": str(output_path),
-        "colored_vertices": int(color_mask.sum()),
-        "color_max_depth": float(color_max_depth),
-        "bounds": bounds_summary(aligned_vertices),
-        "axis_convention": "+Z above road, -Z pothole/down",
-    }
-
-
 def export_preview_json(output_path, points, normal, offset, color_mask, max_points, color_max_depth, seed):
     signed = plane_values(points, normal, offset)
     depths = np.maximum(0.0, -signed)
@@ -346,7 +270,6 @@ def export_preview_json(output_path, points, normal, offset, color_mask, max_poi
 def build_depth_preview_fragment(preview, summary):
     depth = summary.get("depth", {})
     plane = summary.get("plane", {})
-    coordinate_convention = summary.get("coordinate_convention", {})
     data_json = json.dumps(preview, separators=(",", ":"))
     summary_json = json.dumps(
         {
@@ -358,7 +281,6 @@ def build_depth_preview_fragment(preview, summary):
             "deepest_point_xyz": depth.get("deepest_point_xyz"),
             "inlier_ratio": plane.get("inlier_ratio"),
             "plane_normal": plane.get("normal"),
-            "road_aligned_frame": coordinate_convention.get("road_aligned_frame"),
         },
         separators=(",", ":"),
     )
@@ -393,7 +315,7 @@ def build_depth_preview_fragment(preview, summary):
   </div>
 
   <div class="depth-map-stage">
-    <canvas data-role="canvas" role="img" aria-label="Road-aligned 3D point cloud colored by pothole depth"></canvas>
+    <canvas data-role="canvas" role="img" aria-label="3D point cloud colored by pothole depth"></canvas>
     <div class="text-small depth-readout" data-role="readout">Depth map</div>
   </div>
 
@@ -403,7 +325,7 @@ def build_depth_preview_fragment(preview, summary):
     <span><span data-role="color-max"></span> deep</span>
   </div>
   <div class="text-small text-muted">
-    Road-aligned local axes: +Z is above the road and -Z is pothole/down. Hover coordinates remain original input XYZ.
+    XYZ triad follows the input coordinates. Local +N is above the fitted road plane; -N is pothole/down.
   </div>
 </div>
 
@@ -463,34 +385,13 @@ def build_depth_preview_fragment(preview, summary):
   const sizeInput = root.querySelector('[data-role="point-size"]');
   const points = preview.points;
   const colors = points.map((p) => `rgb(${{p[5]}},${{p[6]}},${{p[7]}})`);
-  const roadFrame = summary.road_aligned_frame;
-  const roadOrigin = roadFrame.origin;
-  const roadRotation = roadFrame.world_to_local_rotation;
-  const displayPoints = points.map((p) => toRoadAligned(p));
-  const deepestDisplayPoint = summary.deepest_point_xyz
-    ? toRoadAligned(summary.deepest_point_xyz)
-    : null;
-  const displayMin = [Infinity, Infinity, Infinity];
-  const displayMax = [-Infinity, -Infinity, -Infinity];
-  for (const point of displayPoints) {{
-    for (let axis = 0; axis < 3; axis += 1) {{
-      displayMin[axis] = Math.min(displayMin[axis], point[axis]);
-      displayMax[axis] = Math.max(displayMax[axis], point[axis]);
-    }}
-  }}
+  const bounds = preview.bounds;
   const center = [
-    (displayMin[0] + displayMax[0]) / 2,
-    (displayMin[1] + displayMax[1]) / 2,
-    (displayMin[2] + displayMax[2]) / 2
+    (bounds.min[0] + bounds.max[0]) / 2,
+    (bounds.min[1] + bounds.max[1]) / 2,
+    (bounds.min[2] + bounds.max[2]) / 2
   ];
-  const radius = Math.max(
-    1e-6,
-    Math.hypot(
-      displayMax[0] - displayMin[0],
-      displayMax[1] - displayMin[1],
-      displayMax[2] - displayMin[2]
-    ) / 2
-  );
+  const radius = Math.max(1e-6, Math.hypot(bounds.size[0], bounds.size[1], bounds.size[2]) / 2);
   const projected = new Array(points.length);
   let yaw = -0.72;
   let pitch = -0.58;
@@ -508,17 +409,6 @@ def build_depth_preview_fragment(preview, summary):
   readout.textContent = summary.deepest_point_xyz
     ? `deepest signed height ${{fmt(summary.deepest_point_signed_distance)}} at (${{summary.deepest_point_xyz.map(fmt).join(", ")}})`
     : "Depth map";
-
-  function toRoadAligned(coord) {{
-    const relative = [
-      coord[0] - roadOrigin[0],
-      coord[1] - roadOrigin[1],
-      coord[2] - roadOrigin[2]
-    ];
-    return roadRotation.map((row) => (
-      row[0] * relative[0] + row[1] * relative[1] + row[2] * relative[2]
-    ));
-  }}
 
   function resizeCanvas() {{
     const rect = canvas.getBoundingClientRect();
@@ -572,7 +462,7 @@ def build_depth_preview_fragment(preview, summary):
     const order = [];
 
     for (let i = 0; i < points.length; i += 1) {{
-      const p = displayPoints[i];
+      const p = points[i];
       const [sx, sy2, depthZ] = projectCoordinate(p, width, height, scale, cy, sy, cp, sp, cx, midY);
       projected[i] = [sx, sy2, depthZ];
       order.push(i);
@@ -665,15 +555,24 @@ def build_depth_preview_fragment(preview, summary):
         axis.color
       );
     }}
+    if (Array.isArray(summary.plane_normal) && summary.plane_normal.length === 3) {{
+      drawAxisArrow(
+        originX,
+        originY,
+        projectDirection(summary.plane_normal, cy, sy, cp, sp),
+        "N",
+        "rgb(150, 80, 190)"
+      );
+    }}
     ctx.fillStyle = text;
     ctx.font = "400 11px sans-serif";
-    ctx.fillText("road-aligned axes", originX - 45, originY + 64);
+    ctx.fillText("input axes", originX - 28, originY + 64);
     ctx.restore();
   }}
 
   function drawDeepestMarker(width, height, scale, cy, sy, cp, sp, cx, midY) {{
-    if (!deepestDisplayPoint) return;
-    const [sx, sy2] = projectCoordinate(deepestDisplayPoint, width, height, scale, cy, sy, cp, sp, cx, midY);
+    if (!summary.deepest_point_xyz) return;
+    const [sx, sy2] = projectCoordinate(summary.deepest_point_xyz, width, height, scale, cy, sy, cp, sp, cx, midY);
     const marker = getComputedStyle(root).getPropertyValue("--destructive").trim() || "red";
     const backing = getComputedStyle(root).getPropertyValue("--background").trim() || "white";
     const text = getComputedStyle(root).getPropertyValue("--foreground").trim() || "black";
@@ -773,11 +672,11 @@ def build_depth_preview_fragment(preview, summary):
       const view = button.dataset.view;
       if (view === "top") {{
         yaw = 0;
-        pitch = 0;
+        pitch = -1.35;
         zoom = 1.0;
       }} else if (view === "side") {{
         yaw = -1.55;
-        pitch = 0;
+        pitch = -0.05;
         zoom = 1.0;
       }} else if (view === "deepest") {{
         yaw = -0.72;
@@ -1191,15 +1090,6 @@ def parse_args():
         help="Optional output PLY with vertex colors mapped to model-unit depth.",
     )
     parser.add_argument(
-        "--aligned-ply",
-        type=Path,
-        default=None,
-        help=(
-            "Optional road-aligned colored PLY. Its fitted road plane is horizontal, "
-            "+Z is above the road, and -Z is pothole/down."
-        ),
-    )
-    parser.add_argument(
         "--color-max-depth",
         type=float,
         default=None,
@@ -1248,8 +1138,6 @@ def apply_default_output_paths(args):
         args.summary_json = output_dir / f"{stem}_depth_summary.json"
     if args.colored_ply is None:
         args.colored_ply = output_dir / f"{stem}_depth_map.ply"
-    if args.aligned_ply is None:
-        args.aligned_ply = output_dir / f"{stem}_road_aligned_depth_map.ply"
     if args.preview_json is None:
         args.preview_json = output_dir / f"{stem}_depth_preview_points.json"
     if args.preview_html is None:
@@ -1336,9 +1224,6 @@ def main():
             "surface_normal_agreement": None,
         }
     orientation["final_local_up_vector"] = depth["normal"].tolist()
-    road_frame = build_road_aligned_frame(
-        depth["normal"], depth["offset"], plane_points[inlier_mask]
-    )
 
     color_mask = depth_mask
     color_max_depth = args.color_max_depth
@@ -1357,7 +1242,6 @@ def main():
             "above_road": "positive",
             "depth_magnitude": "max(0, -local_signed_height)",
             "orientation": orientation,
-            "road_aligned_frame": road_frame,
         },
         "vertices_loaded": int(len(vertices)),
         "working_vertices": int(len(working)),
@@ -1403,17 +1287,6 @@ def main():
             depth["offset"],
             color_mask,
             color_max_depth,
-        )
-
-    if args.aligned_ply:
-        result["road_aligned_ply"] = export_road_aligned_colored_ply(
-            args.input,
-            args.aligned_ply,
-            depth["normal"],
-            depth["offset"],
-            color_mask,
-            color_max_depth,
-            road_frame,
         )
 
     if args.preview_json:
@@ -1481,9 +1354,6 @@ def main():
     if args.colored_ply:
         print()
         print(f"Saved colored depth PLY: {args.colored_ply}")
-
-    if args.aligned_ply:
-        print(f"Saved road-aligned depth PLY: {args.aligned_ply}")
 
     if args.preview_json:
         print(f"Saved preview JSON: {args.preview_json}")

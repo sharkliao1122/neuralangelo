@@ -24,46 +24,6 @@
         -0.7844336629550895,
         -0.6131538059222762
       ]
-    },
-    "road_aligned_frame": {
-      "origin": [
-        0.6502576807150886,
-        3.628867102027832,
-        2.0655988854572627
-      ],
-      "x_axis": [
-        0.9956373643521577,
-        -0.07351404525148554,
-        -0.057462369048370966
-      ],
-      "y_axis": [
-        6.93889390390723e-18,
-        -0.6158404936130976,
-        0.7878708564392876
-      ],
-      "z_axis_up": [
-        -0.09330722751153121,
-        -0.7844336629550895,
-        -0.6131538059222762
-      ],
-      "negative_z": "pothole_down",
-      "world_to_local_rotation": [
-        [
-          0.9956373643521577,
-          -0.07351404525148554,
-          -0.057462369048370966
-        ],
-        [
-          6.93889390390723e-18,
-          -0.6158404936130976,
-          0.7878708564392876
-        ],
-        [
-          -0.09330722751153121,
-          -0.7844336629550895,
-          -0.6131538059222762
-        ]
-      ]
     }
   },
   "vertices_loaded": 822499,
@@ -164,29 +124,6 @@
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_depth_map.ply",
     "colored_vertices": 822499,
     "color_max_depth": 0.20988501257670045
-  },
-  "road_aligned_ply": {
-    "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_road_aligned_depth_map.ply",
-    "colored_vertices": 822499,
-    "color_max_depth": 0.20988501257670045,
-    "bounds": {
-      "min": [
-        -9.098731737730073,
-        -8.76129812735608,
-        -0.26107480259705795
-      ],
-      "max": [
-        7.459732218957075,
-        9.12284066624603,
-        0.21782538894191594
-      ],
-      "size": [
-        16.55846395668715,
-        17.884138793602112,
-        0.4789001915389739
-      ]
-    },
-    "axis_convention": "+Z above road, -Z pothole/down"
   },
   "preview_json": {
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_depth_preview_points.json",
