@@ -73,24 +73,49 @@ def smallest_eigenvector_symmetric_3x3(matrix, sweeps=24):
     return np.array([v[0][smallest], v[1][smallest], v[2][smallest]], dtype=np.float64)
 
 
+def item_vertex_normals(item, vertex_count):
+    if not hasattr(item, "vertex_normals"):
+        return np.full((vertex_count, 3), np.nan, dtype=np.float64)
+    try:
+        normals = np.asarray(item.vertex_normals, dtype=np.float64)
+    except (AttributeError, ValueError, TypeError):
+        return np.full((vertex_count, 3), np.nan, dtype=np.float64)
+    if normals.shape != (vertex_count, 3):
+        return np.full((vertex_count, 3), np.nan, dtype=np.float64)
+    return normals
+
+
 def load_vertices(path):
     geometry = trimesh.load(str(path), process=False)
     if isinstance(geometry, trimesh.Scene):
-        chunks = [
-            np.asarray(item.vertices, dtype=np.float64)
-            for item in geometry.geometry.values()
-            if hasattr(item, "vertices") and len(item.vertices)
-        ]
-        if not chunks:
+        vertex_chunks = []
+        normal_chunks = []
+        for item in geometry.geometry.values():
+            if not hasattr(item, "vertices") or not len(item.vertices):
+                continue
+            item_vertices = np.asarray(item.vertices, dtype=np.float64)
+            vertex_chunks.append(item_vertices)
+            normal_chunks.append(item_vertex_normals(item, len(item_vertices)))
+        if not vertex_chunks:
             raise ValueError(f"No vertices found in scene: {path}")
-        vertices = np.vstack(chunks)
+        vertices = np.vstack(vertex_chunks)
+        vertex_normals = np.vstack(normal_chunks)
     elif hasattr(geometry, "vertices"):
         vertices = np.asarray(geometry.vertices, dtype=np.float64)
+        vertex_normals = item_vertex_normals(geometry, len(vertices))
     else:
         raise ValueError(f"Unsupported geometry type: {type(geometry).__name__}")
 
     finite = np.isfinite(vertices).all(axis=1)
-    return vertices[finite]
+    vertices = vertices[finite]
+    vertex_normals = vertex_normals[finite]
+    valid_normals = np.isfinite(vertex_normals).all(axis=1)
+    normal_lengths = np.zeros(len(vertex_normals), dtype=np.float64)
+    normal_lengths[valid_normals] = row_norms(vertex_normals[valid_normals])
+    valid_normals &= normal_lengths > 1e-12
+    vertex_normals[~valid_normals] = np.nan
+    vertex_normals[valid_normals] /= normal_lengths[valid_normals, None]
+    return vertices, vertex_normals
 
 
 def bounds_summary(points):
@@ -192,15 +217,32 @@ def export_preview_json(output_path, points, normal, offset, color_mask, max_poi
     else:
         indices = eligible
     selected = points[indices]
+    selected_signed = signed[indices]
     selected_depths = depths[indices]
     selected_rgba = depth_to_rgba(selected_depths, color_max_depth)[:, :3]
     order = np.argsort(selected_depths)
     selected = selected[order]
+    selected_signed = selected_signed[order]
     selected_depths = selected_depths[order]
     selected_rgba = selected_rgba[order]
 
     payload = {
         "units": "model_units",
+        "coordinate_convention": {
+            "reference_road_plane": 0.0,
+            "signed_height": "negative_below_road_positive_above_road",
+            "depth_magnitude": "max(0, -signed_height)",
+        },
+        "point_fields": [
+            "x",
+            "y",
+            "z",
+            "signed_height",
+            "depth_magnitude",
+            "red",
+            "green",
+            "blue",
+        ],
         "point_count": int(len(selected)),
         "color_max_depth": float(color_max_depth),
         "bounds": bounds_summary(selected),
@@ -209,12 +251,15 @@ def export_preview_json(output_path, points, normal, offset, color_mask, max_poi
                 round(float(point[0]), 4),
                 round(float(point[1]), 4),
                 round(float(point[2]), 4),
+                round(float(signed_height), 6),
                 round(float(depth), 6),
                 int(color[0]),
                 int(color[1]),
                 int(color[2]),
             ]
-            for point, depth, color in zip(selected, selected_depths, selected_rgba)
+            for point, signed_height, depth, color in zip(
+                selected, selected_signed, selected_depths, selected_rgba
+            )
         ],
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -231,22 +276,25 @@ def build_depth_preview_fragment(preview, summary):
             "max_depth": depth.get("max_depth"),
             "bottom_mean_depth": depth.get("bottom_mean_depth"),
             "bottom_percentile_depth": depth.get("bottom_percentile_depth"),
+            "deepest_point_signed_distance": depth.get("deepest_point_signed_distance"),
+            "bottom_mean_signed_height": depth.get("bottom_mean_signed_height"),
             "deepest_point_xyz": depth.get("deepest_point_xyz"),
             "inlier_ratio": plane.get("inlier_ratio"),
+            "plane_normal": plane.get("normal"),
         },
         separators=(",", ":"),
     )
     return f"""<div id="pothole-depth-map-vis" class="pothole-depth-map-vis">
   <div class="viz-grid">
     <div class="card viz-stat">
-      <span class="text-muted">Max depth</span>
+      <span class="text-muted">Deepest signed height</span>
       <span class="viz-stat-value" data-role="max-depth"></span>
-      <span class="text-small text-muted">model units</span>
+      <span class="text-small text-muted">negative = below road</span>
     </div>
     <div class="card viz-stat">
-      <span class="text-muted">Deepest 1% mean</span>
+      <span class="text-muted">Deepest 1% signed mean</span>
       <span class="viz-stat-value" data-role="mean-depth"></span>
-      <span class="text-small text-muted">model units</span>
+      <span class="text-small text-muted">road plane = 0</span>
     </div>
     <div class="card viz-stat">
       <span class="text-muted">Preview points</span>
@@ -272,9 +320,12 @@ def build_depth_preview_fragment(preview, summary):
   </div>
 
   <div class="depth-legend" aria-hidden="true">
-    <span>0</span>
+    <span>road 0</span>
     <div class="depth-legend-bar"></div>
-    <span data-role="color-max"></span>
+    <span><span data-role="color-max"></span> deep</span>
+  </div>
+  <div class="text-small text-muted">
+    XYZ triad follows the input coordinates. Local +N is above the fitted road plane; -N is pothole/down.
   </div>
 </div>
 
@@ -333,7 +384,7 @@ def build_depth_preview_fragment(preview, summary):
   const readout = root.querySelector('[data-role="readout"]');
   const sizeInput = root.querySelector('[data-role="point-size"]');
   const points = preview.points;
-  const colors = points.map((p) => `rgb(${{p[4]}},${{p[5]}},${{p[6]}})`);
+  const colors = points.map((p) => `rgb(${{p[5]}},${{p[6]}},${{p[7]}})`);
   const bounds = preview.bounds;
   const center = [
     (bounds.min[0] + bounds.max[0]) / 2,
@@ -351,12 +402,12 @@ def build_depth_preview_fragment(preview, summary):
   let lastY = 0;
 
   const fmt = (value) => Number.isFinite(value) ? value.toFixed(4) : "n/a";
-  root.querySelector('[data-role="max-depth"]').textContent = fmt(summary.max_depth);
-  root.querySelector('[data-role="mean-depth"]').textContent = fmt(summary.bottom_mean_depth);
+  root.querySelector('[data-role="max-depth"]').textContent = fmt(summary.deepest_point_signed_distance);
+  root.querySelector('[data-role="mean-depth"]').textContent = fmt(summary.bottom_mean_signed_height);
   root.querySelector('[data-role="point-count"]').textContent = preview.point_count.toLocaleString();
   root.querySelector('[data-role="color-max"]').textContent = fmt(preview.color_max_depth);
   readout.textContent = summary.deepest_point_xyz
-    ? `deepest ${{fmt(summary.max_depth)}} at (${{summary.deepest_point_xyz.map(fmt).join(", ")}})`
+    ? `deepest signed height ${{fmt(summary.deepest_point_signed_distance)}} at (${{summary.deepest_point_xyz.map(fmt).join(", ")}})`
     : "Depth map";
 
   function resizeCanvas() {{
@@ -387,6 +438,16 @@ def build_depth_preview_fragment(preview, summary):
     return [cx + rx * scale, midY - ry * scale, depthZ];
   }}
 
+  function projectDirection(direction, cy, sy, cp, sp) {{
+    const x = direction[0];
+    const y = direction[1];
+    const z = direction[2];
+    const rx = x * cy + z * sy;
+    const rz = -x * sy + z * cy;
+    const ry = y * cp - rz * sp;
+    return [rx, -ry];
+  }}
+
   function render() {{
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
@@ -413,13 +474,100 @@ def build_depth_preview_fragment(preview, summary):
       const [sx, sy2] = projected[i];
       if (sx < -8 || sx > width + 8 || sy2 < -8 || sy2 > height + 8) continue;
       ctx.fillStyle = colors[i];
-      ctx.beginPath();
-      ctx.arc(sx, sy2, pointSize, 0, Math.PI * 2);
-      ctx.fill();
+      if (pointSize <= 2) {{
+        ctx.fillRect(sx - pointSize / 2, sy2 - pointSize / 2, pointSize, pointSize);
+      }} else {{
+        ctx.beginPath();
+        ctx.arc(sx, sy2, pointSize, 0, Math.PI * 2);
+        ctx.fill();
+      }}
     }}
     ctx.globalAlpha = 1;
     drawDeepestMarker(width, height, scale, cy, sy, cp, sp, cx, midY);
+    drawCoordinateAxes(width, height, cy, sy, cp, sp);
     drawScale(width, height);
+  }}
+
+  function drawAxisArrow(originX, originY, direction, label, color) {{
+    const length = 42;
+    const negativeLength = 21;
+    const directionLength = Math.max(1e-9, Math.hypot(direction[0], direction[1]));
+    const dx = direction[0] / directionLength;
+    const dy = direction[1] / directionLength;
+    const endX = originX + dx * length;
+    const endY = originY + dy * length;
+    const negativeX = originX - dx * negativeLength;
+    const negativeY = originY - dy * negativeLength;
+    const arrow = 6;
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.48;
+    ctx.beginPath();
+    ctx.moveTo(negativeX, negativeY);
+    ctx.lineTo(originX, originY);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.moveTo(originX, originY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+    const angle = Math.atan2(dy, dx);
+    ctx.beginPath();
+    ctx.moveTo(endX, endY);
+    ctx.lineTo(endX - arrow * Math.cos(angle - Math.PI / 6), endY - arrow * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(endX - arrow * Math.cos(angle + Math.PI / 6), endY - arrow * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+    ctx.font = "500 12px sans-serif";
+    ctx.fillText(`+${{label}}`, endX + dx * 8 - 5, endY + dy * 8 + 4);
+    ctx.globalAlpha = 0.72;
+    ctx.fillText(`-${{label}}`, negativeX - dx * 15 - 5, negativeY - dy * 10 + 4);
+    ctx.restore();
+  }}
+
+  function drawCoordinateAxes(width, height, cy, sy, cp, sp) {{
+    const originX = 74;
+    const originY = Math.min(82, height - 76);
+    const axes = [
+      {{ direction: [1, 0, 0], label: "X", color: "rgb(220, 72, 72)" }},
+      {{ direction: [0, 1, 0], label: "Y", color: "rgb(60, 170, 95)" }},
+      {{ direction: [0, 0, 1], label: "Z", color: "rgb(65, 120, 225)" }}
+    ];
+    const backing = getComputedStyle(root).getPropertyValue("--background").trim() || "white";
+    const text = getComputedStyle(root).getPropertyValue("--foreground").trim() || "black";
+
+    ctx.save();
+    ctx.fillStyle = backing;
+    ctx.globalAlpha = 0.76;
+    ctx.beginPath();
+    ctx.arc(originX, originY, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    for (const axis of axes) {{
+      drawAxisArrow(
+        originX,
+        originY,
+        projectDirection(axis.direction, cy, sy, cp, sp),
+        axis.label,
+        axis.color
+      );
+    }}
+    if (Array.isArray(summary.plane_normal) && summary.plane_normal.length === 3) {{
+      drawAxisArrow(
+        originX,
+        originY,
+        projectDirection(summary.plane_normal, cy, sy, cp, sp),
+        "N",
+        "rgb(150, 80, 190)"
+      );
+    }}
+    ctx.fillStyle = text;
+    ctx.font = "400 11px sans-serif";
+    ctx.fillText("input axes", originX - 28, originY + 64);
+    ctx.restore();
   }}
 
   function drawDeepestMarker(width, height, scale, cy, sy, cp, sp, cx, midY) {{
@@ -428,7 +576,7 @@ def build_depth_preview_fragment(preview, summary):
     const marker = getComputedStyle(root).getPropertyValue("--destructive").trim() || "red";
     const backing = getComputedStyle(root).getPropertyValue("--background").trim() || "white";
     const text = getComputedStyle(root).getPropertyValue("--foreground").trim() || "black";
-    const label = `deepest ${{fmt(summary.max_depth)}}`;
+    const label = `deepest ${{fmt(summary.deepest_point_signed_distance)}}`;
     const labelX = Math.max(8, Math.min(width - 112, sx + 12));
     const labelY = Math.max(18, Math.min(height - 12, sy2 - 12));
 
@@ -509,7 +657,7 @@ def build_depth_preview_fragment(preview, summary):
       const selected = nearestPoint(event.clientX - rect.left, event.clientY - rect.top);
       if (selected >= 0) {{
         const p = points[selected];
-        readout.textContent = `depth ${{fmt(p[3])}} at (${{fmt(p[0])}}, ${{fmt(p[1])}}, ${{fmt(p[2])}})`;
+        readout.textContent = `signed height ${{fmt(p[3])}}, depth ${{fmt(p[4])}} at (${{fmt(p[0])}}, ${{fmt(p[1])}}, ${{fmt(p[2])}})`;
       }}
     }}
   }});
@@ -535,7 +683,7 @@ def build_depth_preview_fragment(preview, summary):
         pitch = -0.58;
         zoom = 1.55;
         if (summary.deepest_point_xyz) {{
-          readout.textContent = `deepest ${{fmt(summary.max_depth)}} at (${{summary.deepest_point_xyz.map(fmt).join(", ")}})`;
+          readout.textContent = `deepest signed height ${{fmt(summary.deepest_point_signed_distance)}} at (${{summary.deepest_point_xyz.map(fmt).join(", ")}})`;
         }}
       }} else {{
         yaw = -0.72;
@@ -760,6 +908,58 @@ def ransac_plane(points, threshold, iterations, sample_size, refine_size, batch_
     return normal, offset, inlier_mask, all_distances
 
 
+def orient_plane_to_up_vector(normal, offset, up_vector):
+    up = np.asarray(up_vector, dtype=np.float64)
+    if not np.isfinite(up).all() or vector_norm(up) <= 1e-12:
+        raise ValueError("--up-vector must contain a finite, non-zero vector")
+    up /= vector_norm(up)
+    dot = float(np.dot(normal, up))
+    if dot < 0.0:
+        normal = -normal
+        offset = -offset
+        dot = -dot
+    return normal, offset, {
+        "method": "user_up_vector",
+        "up_vector": up.tolist(),
+        "normal_up_alignment": dot,
+        "depression_sign": "negative",
+        "surface_normal_agreement": None,
+    }
+
+
+def orient_plane_from_surface_normals(normal, offset, vertex_normals, inlier_mask):
+    if vertex_normals is None or len(vertex_normals) != len(inlier_mask):
+        return normal, offset, None
+
+    valid = inlier_mask & np.isfinite(vertex_normals).all(axis=1)
+    if int(valid.sum()) < 3:
+        return normal, offset, None
+
+    dots = vertex_normals[valid] @ normal
+    strong = np.abs(dots) >= 0.5
+    if int(strong.sum()) < 3:
+        return normal, offset, None
+
+    positive_fraction = float(np.mean(dots[strong] > 0.0))
+    agreement = max(positive_fraction, 1.0 - positive_fraction)
+    if agreement < 0.65:
+        return normal, offset, None
+
+    if positive_fraction < 0.5:
+        normal = -normal
+        offset = -offset
+        positive_fraction = 1.0 - positive_fraction
+
+    return normal, offset, {
+        "method": "mesh_surface_normals",
+        "up_vector": normal.tolist(),
+        "normal_up_alignment": 1.0,
+        "depression_sign": "negative",
+        "surface_normal_samples": int(strong.sum()),
+        "surface_normal_agreement": positive_fraction,
+    }
+
+
 def orient_for_depth(normal, offset, distances, pit_side, bottom_percent):
     if pit_side == "negative":
         return normal, offset, distances, "negative"
@@ -800,6 +1000,8 @@ def measure_depth(points, normal, offset, pit_side, bottom_percent):
         "deepest_point_signed_distance": deepest_distance,
         "bottom_percent": bottom_percent,
         "bottom_count": int(len(bottom_indices)),
+        "bottom_mean_signed_height": float(bottom_distances.mean()),
+        "bottom_percentile_signed_height": float(bottom_distances.max()),
         "bottom_mean_depth": max(0.0, -float(bottom_distances.mean())),
         "bottom_percentile_depth": max(0.0, -float(bottom_distances.max())),
         "bottom_centroid_xyz": bottom_points.mean(axis=0).tolist(),
@@ -865,8 +1067,19 @@ def parse_args():
         choices=("auto", "negative", "positive"),
         default="auto",
         help=(
-            "Which signed side of the fitted plane is the pothole. Use auto for "
-            "the deeper tail, or force negative/positive if you know the orientation."
+            "Fallback side selection when no --up-vector or reliable mesh surface "
+            "normals are available. Output is always reoriented so a pothole is negative."
+        ),
+    )
+    parser.add_argument(
+        "--up-vector",
+        type=float,
+        nargs=3,
+        metavar=("UX", "UY", "UZ"),
+        default=None,
+        help=(
+            "Known physical upward direction in input XYZ coordinates. When supplied, "
+            "the plane normal is oriented toward it and depressions are measured negative."
         ),
     )
     parser.add_argument("--summary-json", type=Path, default=None)
@@ -897,7 +1110,12 @@ def parse_args():
         default=None,
         help="Optional interactive HTML fragment preview with the deepest point marked.",
     )
-    parser.add_argument("--preview-points", type=int, default=20000)
+    parser.add_argument(
+        "--preview-points",
+        type=int,
+        default=60000,
+        help="Number of sampled points embedded in the HTML preview (default: 60000).",
+    )
     parser.add_argument(
         "--deepest-marker",
         type=Path,
@@ -938,20 +1156,26 @@ def main():
         raise ValueError("--bottom-percent must be > 0 and <= 50")
     if args.marker_size <= 0:
         raise ValueError("--marker-size must be greater than 0")
+    if args.up_vector is not None and args.pit_side == "positive":
+        raise ValueError("--up-vector already defines upward; do not combine it with --pit-side positive")
 
-    vertices = load_vertices(args.input)
+    vertices, vertex_normals = load_vertices(args.input)
     print(f"Input: {args.input}")
     print(f"Loaded vertices: {len(vertices):,}")
     print(f"Full bounds: {json.dumps(bounds_summary(vertices), indent=2)}")
     if args.print_bounds_only:
         return
 
-    working = apply_bounds(vertices, args.crop)
+    working_mask = bounds_mask(vertices, args.crop)
+    plane_mask = working_mask & bounds_mask(vertices, args.plane_roi)
+    depth_mask = working_mask & bounds_mask(vertices, args.depth_roi)
+    working = vertices[working_mask]
     if len(working) < 3:
         raise ValueError("--crop left fewer than 3 points")
 
-    plane_points = apply_bounds(working, args.plane_roi)
-    depth_points = apply_bounds(working, args.depth_roi)
+    plane_points = vertices[plane_mask]
+    plane_vertex_normals = vertex_normals[plane_mask]
+    depth_points = vertices[depth_mask]
     if len(plane_points) < 3:
         raise ValueError("--plane-roi left fewer than 3 points")
     if len(depth_points) < 1:
@@ -970,14 +1194,38 @@ def main():
         batch_size=args.ransac_batch_size,
         seed=args.seed,
     )
+    orientation = None
+    measurement_pit_side = args.pit_side
+    if args.up_vector is not None:
+        normal, offset, orientation = orient_plane_to_up_vector(normal, offset, args.up_vector)
+        measurement_pit_side = "negative"
+    elif args.pit_side == "auto":
+        normal, offset, orientation = orient_plane_from_surface_normals(
+            normal, offset, plane_vertex_normals, inlier_mask
+        )
+        if orientation is not None:
+            measurement_pit_side = "negative"
+
     depth = measure_depth(
         depth_points,
         normal=normal,
         offset=offset,
-        pit_side=args.pit_side,
+        pit_side=measurement_pit_side,
         bottom_percent=args.bottom_percent,
     )
-    color_mask = bounds_mask(vertices, args.crop) & bounds_mask(vertices, args.depth_roi)
+    if orientation is None:
+        orientation = {
+            "method": (
+                "geometric_tail_inference" if args.pit_side == "auto" else "user_pit_side"
+            ),
+            "up_vector": depth["normal"].tolist(),
+            "normal_up_alignment": None,
+            "depression_sign": "negative",
+            "surface_normal_agreement": None,
+        }
+    orientation["final_local_up_vector"] = depth["normal"].tolist()
+
+    color_mask = depth_mask
     color_max_depth = args.color_max_depth
     if color_max_depth is None:
         color_max_depth = depth["bottom_percentile_depth"] or depth["max_depth"] or 1.0
@@ -986,6 +1234,15 @@ def main():
     result = {
         "input": str(args.input),
         "units": "model_units",
+        "coordinate_convention": {
+            "source_xyz": "unchanged input coordinates",
+            "local_signed_height": "normal_x*x + normal_y*y + normal_z*z + offset",
+            "reference_road_plane": 0.0,
+            "depression": "negative",
+            "above_road": "positive",
+            "depth_magnitude": "max(0, -local_signed_height)",
+            "orientation": orientation,
+        },
         "vertices_loaded": int(len(vertices)),
         "working_vertices": int(len(working)),
         "plane_vertices": int(len(plane_points)),
@@ -1010,6 +1267,8 @@ def main():
             "deepest_point_signed_distance": depth["deepest_point_signed_distance"],
             "bottom_percent": depth["bottom_percent"],
             "bottom_count": depth["bottom_count"],
+            "bottom_mean_signed_height": depth["bottom_mean_signed_height"],
+            "bottom_percentile_signed_height": depth["bottom_percentile_signed_height"],
             "bottom_mean_depth": depth["bottom_mean_depth"],
             "bottom_percentile_depth": depth["bottom_percentile_depth"],
             "bottom_centroid_xyz": depth["bottom_centroid_xyz"],
@@ -1069,19 +1328,27 @@ def main():
     print(f"  RANSAC threshold: {result['ransac_threshold']:.9g}")
 
     print()
-    print("Depth in model units")
-    print(f"  max_depth: {result['depth']['max_depth']:.9g}")
+    print("Depth in model units (road plane = 0, depression = negative)")
     print(
-        f"  deepest_{result['depth']['bottom_percent']:.3g}%_mean_depth: "
-        f"{result['depth']['bottom_mean_depth']:.9g}"
+        "  deepest_point_signed_height: "
+        f"{result['depth']['deepest_point_signed_distance']:.9g}"
+    )
+    print(f"  max_depth_magnitude: {result['depth']['max_depth']:.9g}")
+    print(
+        f"  deepest_{result['depth']['bottom_percent']:.3g}%_mean_signed_height: "
+        f"{result['depth']['bottom_mean_signed_height']:.9g}"
     )
     print(
-        f"  deepest_{result['depth']['bottom_percent']:.3g}%_percentile_depth: "
-        f"{result['depth']['bottom_percentile_depth']:.9g}"
+        f"  deepest_{result['depth']['bottom_percent']:.3g}%_percentile_signed_height: "
+        f"{result['depth']['bottom_percentile_signed_height']:.9g}"
     )
     print(f"  deepest_point_xyz: {result['depth']['deepest_point_xyz']}")
     print(f"  bottom_centroid_xyz: {result['depth']['bottom_centroid_xyz']}")
     print(f"  chosen_pit_side: {result['depth']['pit_side']}")
+    print(
+        "  orientation_method: "
+        f"{result['coordinate_convention']['orientation']['method']}"
+    )
     print(f"  color_max_depth: {result['depth_color']['color_max_depth']:.9g}")
 
     if args.colored_ply:
