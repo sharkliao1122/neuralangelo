@@ -1,0 +1,4 @@
+set "POTHOLE_PYTHON=C:\Users\s7103\anaconda3\envs\neuralangelo_5080\python.exe"
+set "POTHOLE_SCRIPT=C:\research\neuralangelo_test\depth_measure\measure_pothole_depth.py"
+set "POTHOLE_INPUT=C:\research\neuralangelo_test\output_colmap\two_videos\meshed-poisson_twovideos_proxy_1500k.ply"
+"%POTHOLE_PYTHON%" "%POTHOLE_SCRIPT%" "%POTHOLE_INPUT%"

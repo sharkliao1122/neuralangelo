@@ -1,0 +1,193 @@
+{
+  "input": "C:\\research\\neuralangelo_test\\output_colmap\\two_videos\\meshed-poisson_twovideos_proxy_1500k.ply",
+  "units": "model_units",
+  "coordinate_convention": {
+    "source_xyz": "unchanged input coordinates",
+    "local_signed_height": "normal_x*x + normal_y*y + normal_z*z + offset",
+    "reference_road_plane": 0.0,
+    "depression": "negative",
+    "above_road": "positive",
+    "depth_magnitude": "max(0, -local_signed_height)",
+    "orientation": {
+      "method": "mesh_surface_normals",
+      "up_vector": [
+        -0.058378972195017184,
+        -0.6061897533383084,
+        -0.7931745574292548
+      ],
+      "normal_up_alignment": 1.0,
+      "depression_sign": "negative",
+      "surface_normal_samples": 737852,
+      "surface_normal_agreement": 0.9987802431924018,
+      "final_local_up_vector": [
+        -0.058378972195017184,
+        -0.6061897533383084,
+        -0.7931745574292548
+      ]
+    },
+    "road_aligned_frame": {
+      "origin": [
+        -0.09844468330644403,
+        -0.6488997285372909,
+        1.2680969152390056
+      ],
+      "x_axis": [
+        0.9982944934263904,
+        -0.035449193587734476,
+        -0.046383823349589404
+      ],
+      "y_axis": [
+        0.0,
+        -0.7945296329411635,
+        0.6072253802159293
+      ],
+      "z_axis_up": [
+        -0.058378972195017184,
+        -0.6061897533383084,
+        -0.7931745574292548
+      ],
+      "negative_z": "pothole_down",
+      "world_to_local_rotation": [
+        [
+          0.9982944934263904,
+          -0.035449193587734476,
+          -0.046383823349589404
+        ],
+        [
+          0.0,
+          -0.7945296329411635,
+          0.6072253802159293
+        ],
+        [
+          -0.058378972195017184,
+          -0.6061897533383084,
+          -0.7931745574292548
+        ]
+      ]
+    }
+  },
+  "vertices_loaded": 757048,
+  "working_vertices": 757048,
+  "plane_vertices": 757048,
+  "depth_vertices": 757048,
+  "working_bounds": {
+    "min": [
+      -3.896543502807617,
+      -6.492416858673096,
+      -2.845951557159424
+    ],
+    "max": [
+      3.5550036430358887,
+      4.624279975891113,
+      5.744327545166016
+    ],
+    "size": [
+      7.451547145843506,
+      11.116696834564209,
+      8.59027910232544
+    ]
+  },
+  "plane_bounds": {
+    "min": [
+      -3.896543502807617,
+      -6.492416858673096,
+      -2.845951557159424
+    ],
+    "max": [
+      3.5550036430358887,
+      4.624279975891113,
+      5.744327545166016
+    ],
+    "size": [
+      7.451547145843506,
+      11.116696834564209,
+      8.59027910232544
+    ]
+  },
+  "depth_bounds": {
+    "min": [
+      -3.896543502807617,
+      -6.492416858673096,
+      -2.845951557159424
+    ],
+    "max": [
+      3.5550036430358887,
+      4.624279975891113,
+      5.744327545166016
+    ],
+    "size": [
+      7.451547145843506,
+      11.116696834564209,
+      8.59027910232544
+    ]
+  },
+  "ransac_threshold": 0.03975702755757367,
+  "ransac_iterations": 512,
+  "plane": {
+    "normal": [
+      -0.058378972195017184,
+      -0.6061897533383084,
+      -0.7931745574292548
+    ],
+    "offset": 0.6067187437092916,
+    "equation": "normal_x*x + normal_y*y + normal_z*z + offset = 0",
+    "inliers": 743746,
+    "inlier_ratio": 0.9824291194217539,
+    "inlier_rmse": 0.015671003603566054
+  },
+  "depth": {
+    "pit_side": "negative",
+    "max_depth": 0.07494967497500649,
+    "deepest_point_xyz": [
+      -0.8472442626953125,
+      -3.9314699172973633,
+      3.9264326095581055
+    ],
+    "deepest_point_signed_distance": -0.07494967497500649,
+    "bottom_percent": 1.0,
+    "bottom_count": 7571,
+    "bottom_mean_signed_height": -0.04856994201815171,
+    "bottom_percentile_signed_height": -0.040898759304112575,
+    "bottom_mean_depth": 0.04856994201815171,
+    "bottom_percentile_depth": 0.040898759304112575,
+    "bottom_centroid_xyz": [
+      -0.5576556363739511,
+      -2.5215254124468522,
+      2.7942990551897897
+    ]
+  },
+  "depth_color": {
+    "colored_vertices": 757048,
+    "color_max_depth": 0.040898759304112575
+  },
+  "road_aligned_ply": {
+    "path": "C:\\research\\neuralangelo_test\\output_colmap\\two_videos\\depth\\meshed-poisson_twovideos_proxy_1500k_road_aligned_depth_map.ply",
+    "colored_vertices": 757048,
+    "color_max_depth": 0.040898759304112575,
+    "bounds": {
+      "min": [
+        -3.805699541055757,
+        -6.6758041781150546,
+        -0.07494967497500715
+      ],
+      "max": [
+        3.6615935961695136,
+        7.360781855585726,
+        0.0688635873354474
+      ],
+      "size": [
+        7.467293137225271,
+        14.03658603370078,
+        0.14381326231045455
+      ]
+    },
+    "axis_convention": "+Z above road, -Z pothole/down"
+  },
+  "preview_json": {
+    "path": "C:\\research\\neuralangelo_test\\output_colmap\\two_videos\\depth\\meshed-poisson_twovideos_proxy_1500k_depth_preview_points.json",
+    "preview_points": 60000
+  },
+  "preview_html": {
+    "path": "C:\\research\\neuralangelo_test\\output_colmap\\two_videos\\depth\\meshed-poisson_twovideos_proxy_1500k_depth_preview.html"
+  }
+}
