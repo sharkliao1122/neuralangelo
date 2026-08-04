@@ -160,11 +160,6 @@
     "colored_vertices": 822499,
     "color_max_depth": 0.20988501257670045
   },
-  "colored_ply": {
-    "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_depth_map.ply",
-    "colored_vertices": 822499,
-    "color_max_depth": 0.20988501257670045
-  },
   "road_aligned_ply": {
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_road_aligned_depth_map.ply",
     "colored_vertices": 822499,

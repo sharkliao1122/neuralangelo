@@ -1188,7 +1188,10 @@ def parse_args():
         "--colored-ply",
         type=Path,
         default=None,
-        help="Optional output PLY with vertex colors mapped to model-unit depth.",
+        help=(
+            "Optional original-coordinate PLY with depth colors. It is not generated "
+            "by default because the road-aligned PLY contains the same mesh and colors."
+        ),
     )
     parser.add_argument(
         "--aligned-ply",
@@ -1246,8 +1249,6 @@ def apply_default_output_paths(args):
     stem = args.input.stem
     if args.summary_json is None:
         args.summary_json = output_dir / f"{stem}_depth_summary.json"
-    if args.colored_ply is None:
-        args.colored_ply = output_dir / f"{stem}_depth_map.ply"
     if args.aligned_ply is None:
         args.aligned_ply = output_dir / f"{stem}_road_aligned_depth_map.ply"
     if args.preview_json is None:
