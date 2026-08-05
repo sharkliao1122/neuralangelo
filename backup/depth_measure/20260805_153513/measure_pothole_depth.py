@@ -7,7 +7,6 @@ does not apply any real-world scale conversion.
 
 import argparse
 import json
-import struct
 from pathlib import Path
 
 import numpy as np
@@ -138,83 +137,6 @@ def plane_values(points, normal, offset):
     )
 
 
-def find_colmap_images_bin(input_path, explicit_model=None):
-    """Find the COLMAP images.bin belonging to an input point cloud."""
-    if explicit_model is not None:
-        model_path = Path(explicit_model)
-        images_path = model_path if model_path.name == "images.bin" else model_path / "images.bin"
-        if not images_path.is_file():
-            raise FileNotFoundError(f"COLMAP images.bin not found: {images_path}")
-        return images_path.resolve()
-
-    input_path = Path(input_path).resolve()
-    # The model normally sits beside the input or one/two levels above a depth
-    # output folder. Limit discovery so an unrelated drive-level sparse model
-    # can never be selected accidentally.
-    search_roots = list(input_path.parents)[:4]
-    seen = set()
-    for root in search_roots:
-        for candidate in (root / "sparse" / "0" / "images.bin", root / "sparse" / "images.bin"):
-            key = str(candidate)
-            if key in seen:
-                continue
-            seen.add(key)
-            if candidate.is_file():
-                return candidate.resolve()
-    return None
-
-
-def quaternion_to_rotation(qw, qx, qy, qz):
-    length = np.sqrt(qw * qw + qx * qx + qy * qy + qz * qz)
-    if not np.isfinite(length) or length <= 1e-12:
-        raise ValueError("Invalid zero-length COLMAP quaternion")
-    qw, qx, qy, qz = qw / length, qx / length, qy / length, qz / length
-    return np.array(
-        [
-            [1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy - qz * qw), 2.0 * (qx * qz + qy * qw)],
-            [2.0 * (qx * qy + qz * qw), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz - qx * qw)],
-            [2.0 * (qx * qz - qy * qw), 2.0 * (qy * qz + qx * qw), 1.0 - 2.0 * (qx * qx + qy * qy)],
-        ],
-        dtype=np.float64,
-    )
-
-
-def load_colmap_camera_centers(images_path):
-    """Read camera centers from a standard COLMAP images.bin without pycolmap."""
-    centers = []
-    with Path(images_path).open("rb") as stream:
-        header = stream.read(8)
-        if len(header) != 8:
-            raise ValueError(f"Invalid COLMAP images.bin header: {images_path}")
-        image_count = struct.unpack("<Q", header)[0]
-        if image_count > 10_000_000:
-            raise ValueError(f"Unreasonable COLMAP image count: {image_count}")
-
-        for _ in range(image_count):
-            record = stream.read(64)
-            if len(record) != 64:
-                raise ValueError(f"Truncated COLMAP image record: {images_path}")
-            values = struct.unpack("<i7di", record)
-            qw, qx, qy, qz = values[1:5]
-            translation = np.asarray(values[5:8], dtype=np.float64)
-            rotation = quaternion_to_rotation(qw, qx, qy, qz)
-            centers.append(-rotation.T @ translation)
-
-            while True:
-                byte = stream.read(1)
-                if not byte:
-                    raise ValueError(f"Truncated COLMAP image name: {images_path}")
-                if byte == b"\x00":
-                    break
-            point_count_data = stream.read(8)
-            if len(point_count_data) != 8:
-                raise ValueError(f"Truncated COLMAP point count: {images_path}")
-            point_count = struct.unpack("<Q", point_count_data)[0]
-            stream.seek(24 * point_count, 1)
-
-    return np.asarray(centers, dtype=np.float64)
-
-
 def build_road_aligned_frame(normal, offset, reference_points):
     local_z = np.asarray(normal, dtype=np.float64)
     local_z /= vector_norm(local_z)
@@ -295,29 +217,7 @@ def depth_to_rgba(depths, max_depth):
     return np.rint(rgba).astype(np.uint8)
 
 
-def signed_height_to_rgba(signed_heights, max_depth, max_height):
-    """Diverging colors: blue depression, gray road plane, red protrusion."""
-    signed_heights = np.asarray(signed_heights, dtype=np.float64)
-    max_depth = max(float(max_depth), 1e-12)
-    max_height = max(float(max_height), 1e-12)
-    road = np.array([155.0, 155.0, 155.0], dtype=np.float64)
-    depression = np.array([42.0, 93.0, 205.0], dtype=np.float64)
-    protrusion = np.array([220.0, 55.0, 45.0], dtype=np.float64)
-    rgba = np.empty((len(signed_heights), 4), dtype=np.float64)
-    rgba[:, :3] = road
-    below = signed_heights < 0.0
-    above = signed_heights > 0.0
-    below_t = np.clip(-signed_heights[below] / max_depth, 0.0, 1.0)
-    above_t = np.clip(signed_heights[above] / max_height, 0.0, 1.0)
-    rgba[below, :3] = road * (1.0 - below_t[:, None]) + depression * below_t[:, None]
-    rgba[above, :3] = road * (1.0 - above_t[:, None]) + protrusion * above_t[:, None]
-    rgba[:, 3] = 255.0
-    return np.rint(rgba).astype(np.uint8)
-
-
-def export_colored_ply(
-    input_path, output_path, normal, offset, color_mask, color_max_depth, color_max_height
-):
+def export_colored_ply(input_path, output_path, normal, offset, color_mask, color_max_depth):
     geometry = trimesh.load(str(input_path), process=False)
     if isinstance(geometry, trimesh.Scene):
         raise ValueError("--colored-ply currently supports a single mesh or point cloud, not a Scene")
@@ -329,11 +229,10 @@ def export_colored_ply(
         raise ValueError("Internal vertex count mismatch while exporting colored PLY")
 
     signed = plane_values(vertices, normal, offset)
+    depths = np.maximum(0.0, -signed)
     neutral = np.array([155, 155, 155, 255], dtype=np.uint8)
     rgba = np.repeat(neutral[None, :], len(vertices), axis=0)
-    rgba[color_mask] = signed_height_to_rgba(
-        signed[color_mask], color_max_depth, color_max_height
-    )
+    rgba[color_mask] = depth_to_rgba(depths[color_mask], color_max_depth)
 
     geometry.visual.vertex_colors = rgba
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -342,7 +241,6 @@ def export_colored_ply(
         "path": str(output_path),
         "colored_vertices": int(color_mask.sum()),
         "color_max_depth": float(color_max_depth),
-        "color_max_height": float(color_max_height),
     }
 
 
@@ -353,7 +251,6 @@ def export_road_aligned_colored_ply(
     offset,
     color_mask,
     color_max_depth,
-    color_max_height,
     road_frame,
 ):
     geometry = trimesh.load(str(input_path), process=False)
@@ -367,11 +264,10 @@ def export_road_aligned_colored_ply(
         raise ValueError("Internal vertex count mismatch while exporting road-aligned PLY")
 
     signed = plane_values(vertices, normal, offset)
+    depths = np.maximum(0.0, -signed)
     neutral = np.array([155, 155, 155, 255], dtype=np.uint8)
     rgba = np.repeat(neutral[None, :], len(vertices), axis=0)
-    rgba[color_mask] = signed_height_to_rgba(
-        signed[color_mask], color_max_depth, color_max_height
-    )
+    rgba[color_mask] = depth_to_rgba(depths[color_mask], color_max_depth)
     geometry.visual.vertex_colors = rgba
     geometry.apply_transform(road_aligned_transform(road_frame))
 
@@ -382,23 +278,12 @@ def export_road_aligned_colored_ply(
         "path": str(output_path),
         "colored_vertices": int(color_mask.sum()),
         "color_max_depth": float(color_max_depth),
-        "color_max_height": float(color_max_height),
         "bounds": bounds_summary(aligned_vertices),
         "axis_convention": "+Z above road, -Z pothole/down",
     }
 
 
-def export_preview_json(
-    output_path,
-    points,
-    normal,
-    offset,
-    color_mask,
-    max_points,
-    color_max_depth,
-    color_max_height,
-    seed,
-):
+def export_preview_json(output_path, points, normal, offset, color_mask, max_points, color_max_depth, seed):
     signed = plane_values(points, normal, offset)
     depths = np.maximum(0.0, -signed)
     eligible = np.flatnonzero(color_mask)
@@ -410,10 +295,8 @@ def export_preview_json(
     selected = points[indices]
     selected_signed = signed[indices]
     selected_depths = depths[indices]
-    selected_rgba = signed_height_to_rgba(
-        selected_signed, color_max_depth, color_max_height
-    )[:, :3]
-    order = np.argsort(selected_signed)
+    selected_rgba = depth_to_rgba(selected_depths, color_max_depth)[:, :3]
+    order = np.argsort(selected_depths)
     selected = selected[order]
     selected_signed = selected_signed[order]
     selected_depths = selected_depths[order]
@@ -438,7 +321,6 @@ def export_preview_json(
         ],
         "point_count": int(len(selected)),
         "color_max_depth": float(color_max_depth),
-        "color_max_height": float(color_max_height),
         "bounds": bounds_summary(selected),
         "points": [
             [
@@ -463,7 +345,6 @@ def export_preview_json(
 
 def build_depth_preview_fragment(preview, summary):
     depth = summary.get("depth", {})
-    protrusion = summary.get("protrusion", {})
     plane = summary.get("plane", {})
     coordinate_convention = summary.get("coordinate_convention", {})
     data_json = json.dumps(preview, separators=(",", ":"))
@@ -475,13 +356,7 @@ def build_depth_preview_fragment(preview, summary):
             "deepest_point_signed_distance": depth.get("deepest_point_signed_distance"),
             "bottom_mean_signed_height": depth.get("bottom_mean_signed_height"),
             "deepest_point_xyz": depth.get("deepest_point_xyz"),
-            "max_height": protrusion.get("max_height"),
-            "top_mean_height": protrusion.get("top_mean_height"),
-            "highest_point_signed_height": protrusion.get("highest_point_signed_height"),
-            "top_mean_signed_height": protrusion.get("top_mean_signed_height"),
-            "highest_point_xyz": protrusion.get("highest_point_xyz"),
             "inlier_ratio": plane.get("inlier_ratio"),
-            "plane_rmse": plane.get("inlier_rmse"),
             "plane_normal": plane.get("normal"),
             "road_aligned_frame": coordinate_convention.get("road_aligned_frame"),
         },
@@ -500,16 +375,6 @@ def build_depth_preview_fragment(preview, summary):
       <span class="text-small text-muted">road plane = 0</span>
     </div>
     <div class="card viz-stat">
-      <span class="text-muted">Highest signed height</span>
-      <span class="viz-stat-value" data-role="max-height"></span>
-      <span class="text-small text-muted">positive = above road</span>
-    </div>
-    <div class="card viz-stat">
-      <span class="text-muted">Highest 1% signed mean</span>
-      <span class="viz-stat-value" data-role="mean-height"></span>
-      <span class="text-small text-muted">road plane = 0</span>
-    </div>
-    <div class="card viz-stat">
       <span class="text-muted">Preview points</span>
       <span class="viz-stat-value" data-role="point-count"></span>
       <span class="text-small text-muted">sampled from mesh</span>
@@ -521,7 +386,6 @@ def build_depth_preview_fragment(preview, summary):
     <button type="button" class="btn" data-view="top">Top</button>
     <button type="button" class="btn" data-view="side">Side</button>
     <button type="button" class="btn" data-view="deepest">Deepest point</button>
-    <button type="button" class="btn" data-view="highest">Highest point</button>
     <button type="button" class="btn btn-ghost" data-view="reset">Reset</button>
     <label class="form-label">Point size
       <input class="form-range" type="range" min="1" max="5" step="1" value="2" data-role="point-size">
@@ -531,49 +395,19 @@ def build_depth_preview_fragment(preview, summary):
     </label>
   </div>
 
-  <div class="measurement-panel card">
-    <div class="measurement-title">互動式比例與高低差量測</div>
-    <div class="measurement-inputs">
-      <label class="form-label">標定實際長度 (cm)
-        <input type="number" min="0.001" step="0.1" value="414" data-role="calibration-length">
-      </label>
-      <label class="form-label">標定長度誤差 (cm)
-        <input type="number" min="0" step="0.1" value="0.5" data-role="calibration-uncertainty">
-      </label>
-      <label class="form-label">極值區域比例 (%)
-        <input type="number" min="0.1" max="25" step="0.1" value="1" data-role="extreme-percent">
-      </label>
-    </div>
-    <div class="viz-controls" aria-label="Measurement tools">
-      <button type="button" class="btn" data-tool="calibration">1. 點選標定 A / B</button>
-      <button type="button" class="btn" data-tool="road">2. 框選基準路面</button>
-      <button type="button" class="btn" data-tool="feature">3. 框選凸起／凹陷</button>
-      <button type="button" class="btn btn-ghost" data-tool="orbit">旋轉模式</button>
-      <button type="button" class="btn btn-ghost" data-action="clear-measurement">清除量測</button>
-      <button type="button" class="btn" data-action="export-measurement">下載結果 JSON</button>
-    </div>
-    <div class="text-small text-muted">
-      建議先按 Top，再框選。標定使用兩點的三維距離；框選使用目前投影內的點，但平面與高低差均以三維座標計算。
-    </div>
-    <div class="measurement-results" data-role="measurement-results"></div>
-  </div>
-
   <div class="depth-map-stage">
-    <canvas data-role="canvas" role="img" aria-label="Road-aligned 3D point cloud colored by depression and protrusion"></canvas>
+    <canvas data-role="canvas" role="img" aria-label="Road-aligned 3D point cloud colored by pothole depth"></canvas>
     <div class="text-small depth-readout" data-role="readout">Depth map</div>
   </div>
 
   <div class="depth-legend" aria-hidden="true">
-    <span><span data-role="color-depth"></span> depression</span>
-    <div class="depth-legend-bar"></div>
     <span>road 0</span>
-    <div class="height-legend-bar"></div>
-    <span><span data-role="color-height"></span> protrusion</span>
+    <div class="depth-legend-bar"></div>
+    <span><span data-role="color-max"></span> deep</span>
   </div>
   <div class="text-small text-muted">
     Left-drag orbits X/Y; right-drag or Shift + left-drag rotates around local Z; wheel zooms. +Z is above the road and -Z is pothole/down.
   </div>
-  <div class="text-small text-muted" data-role="model-origin"></div>
 </div>
 
 <style>
@@ -604,55 +438,16 @@ def build_depth_preview_fragment(preview, summary):
 }}
 #pothole-depth-map-vis .depth-legend {{
   display: grid;
-  grid-template-columns: auto 1fr auto 1fr auto;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 0.5rem;
   color: var(--muted-foreground);
 }}
 #pothole-depth-map-vis .depth-legend-bar {{
   height: 0.65rem;
-  background: linear-gradient(90deg, rgb(42,93,205), rgb(155,155,155));
-}}
-#pothole-depth-map-vis .measurement-panel {{
-  display: grid;
-  gap: 0.65rem;
-  padding: 0.75rem;
-}}
-#pothole-depth-map-vis .measurement-title {{
-  font-weight: 650;
-}}
-#pothole-depth-map-vis .measurement-inputs {{
-  display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
-  gap: 0.65rem;
-}}
-#pothole-depth-map-vis .measurement-inputs input {{
-  width: 100%;
-  box-sizing: border-box;
-}}
-#pothole-depth-map-vis .measurement-results {{
-  display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 0.5rem;
-}}
-#pothole-depth-map-vis .measurement-result {{
-  border: 1px solid var(--border);
-  padding: 0.55rem;
-  background: color-mix(in srgb, var(--background) 88%, var(--muted));
-}}
-#pothole-depth-map-vis button[aria-pressed="true"] {{
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
-}}
-#pothole-depth-map-vis .height-legend-bar {{
-  height: 0.65rem;
-  background: linear-gradient(90deg, rgb(155,155,155), rgb(220,55,45));
+  background: linear-gradient(90deg, rgb(48,84,150), rgb(44,178,214), rgb(67,190,112), rgb(245,206,66), rgb(218,62,55));
 }}
 @media (max-width: 520px) {{
-  #pothole-depth-map-vis .measurement-inputs,
-  #pothole-depth-map-vis .measurement-results {{
-    grid-template-columns: 1fr;
-  }}
   #pothole-depth-map-vis .depth-map-stage,
   #pothole-depth-map-vis canvas {{
     min-height: 260px;
@@ -671,23 +466,14 @@ def build_depth_preview_fragment(preview, summary):
   const sizeInput = root.querySelector('[data-role="point-size"]');
   const rollInput = root.querySelector('[data-role="z-rotation"]');
   const rollValue = root.querySelector('[data-role="z-rotation-value"]');
-  const calibrationLengthInput = root.querySelector('[data-role="calibration-length"]');
-  const calibrationUncertaintyInput = root.querySelector('[data-role="calibration-uncertainty"]');
-  const extremePercentInput = root.querySelector('[data-role="extreme-percent"]');
-  const measurementResults = root.querySelector('[data-role="measurement-results"]');
   const points = preview.points;
-  const baseColors = points.map((p) => `rgb(${{p[5]}},${{p[6]}},${{p[7]}})`);
-  let colors = baseColors.slice();
+  const colors = points.map((p) => `rgb(${{p[5]}},${{p[6]}},${{p[7]}})`);
   const roadFrame = summary.road_aligned_frame;
   const roadOrigin = roadFrame.origin;
   const roadRotation = roadFrame.world_to_local_rotation;
   const displayPoints = points.map((p) => toRoadAligned(p));
-  let measuredSigned = displayPoints.map((p) => p[2]);
   const deepestDisplayPoint = summary.deepest_point_xyz
     ? toRoadAligned(summary.deepest_point_xyz)
-    : null;
-  const highestDisplayPoint = summary.highest_point_xyz
-    ? toRoadAligned(summary.highest_point_xyz)
     : null;
   const displayMin = [Infinity, Infinity, Infinity];
   const displayMax = [-Infinity, -Infinity, -Infinity];
@@ -722,27 +508,12 @@ def build_depth_preview_fragment(preview, summary):
   let dragMode = "orbit";
   let lastX = 0;
   let lastY = 0;
-  let pointerStartX = 0;
-  let pointerStartY = 0;
-  let toolMode = "orbit";
-  let selectionRect = null;
-  let calibrationIndices = [];
-  let roadIndices = [];
-  let featureIndices = [];
-  let localPlane = {{ a: 0, b: 0, c: 0, rmse: Number(summary.plane_rmse) || 0 }};
-  let latestMeasurement = null;
-  let lastHoverTime = 0;
 
   const fmt = (value) => Number.isFinite(value) ? value.toFixed(4) : "n/a";
   root.querySelector('[data-role="max-depth"]').textContent = fmt(summary.deepest_point_signed_distance);
   root.querySelector('[data-role="mean-depth"]').textContent = fmt(summary.bottom_mean_signed_height);
-  root.querySelector('[data-role="max-height"]').textContent = fmt(summary.highest_point_signed_height);
-  root.querySelector('[data-role="mean-height"]').textContent = fmt(summary.top_mean_signed_height);
   root.querySelector('[data-role="point-count"]').textContent = preview.point_count.toLocaleString();
-  root.querySelector('[data-role="color-depth"]').textContent = `-${{fmt(preview.color_max_depth)}}`;
-  root.querySelector('[data-role="color-height"]').textContent = `+${{fmt(preview.color_max_height)}}`;
-  root.querySelector('[data-role="model-origin"]').textContent =
-    `Model-axis origin O: source XYZ (${{roadOrigin.map(fmt).join(", ")}}); road-aligned XYZ (0, 0, 0).`;
+  root.querySelector('[data-role="color-max"]').textContent = fmt(preview.color_max_depth);
   readout.textContent = summary.deepest_point_xyz
     ? `deepest signed height ${{fmt(summary.deepest_point_signed_distance)}} at (${{summary.deepest_point_xyz.map(fmt).join(", ")}})`
     : "Depth map";
@@ -782,260 +553,6 @@ def build_depth_preview_fragment(preview, summary):
     root.querySelectorAll("[data-view]").forEach((button) => {{
       button.setAttribute("aria-pressed", String(button.dataset.view === name));
     }});
-  }}
-
-  function setToolMode(mode) {{
-    toolMode = mode;
-    selectionRect = null;
-    root.querySelectorAll("[data-tool]").forEach((button) => {{
-      button.setAttribute("aria-pressed", String(button.dataset.tool === mode));
-    }});
-    const messages = {{
-      orbit: "旋轉模式：左鍵旋轉，右鍵或 Shift + 左鍵繞 Z 軸旋轉。",
-      calibration: "標定模式：依序點選三維標定點 A 與 B。第三次點選會重新開始。",
-      road: "基準路面模式：建議切換 Top，拖曳矩形框選沒有凸起或凹陷的完整路面。",
-      feature: "特徵模式：建議切換 Top，拖曳矩形框選要量測的凸起／凹陷區域。"
-    }};
-    readout.textContent = messages[mode] || messages.orbit;
-    render();
-  }}
-
-  function solve3x3(matrix, values) {{
-    const a = matrix.map((row, index) => [...row, values[index]]);
-    for (let column = 0; column < 3; column += 1) {{
-      let pivot = column;
-      for (let row = column + 1; row < 3; row += 1) {{
-        if (Math.abs(a[row][column]) > Math.abs(a[pivot][column])) pivot = row;
-      }}
-      if (Math.abs(a[pivot][column]) < 1e-12) return null;
-      [a[column], a[pivot]] = [a[pivot], a[column]];
-      const divisor = a[column][column];
-      for (let j = column; j < 4; j += 1) a[column][j] /= divisor;
-      for (let row = 0; row < 3; row += 1) {{
-        if (row === column) continue;
-        const factor = a[row][column];
-        for (let j = column; j < 4; j += 1) a[row][j] -= factor * a[column][j];
-      }}
-    }}
-    return [a[0][3], a[1][3], a[2][3]];
-  }}
-
-  function median(values) {{
-    if (!values.length) return NaN;
-    const sorted = values.slice().sort((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-  }}
-
-  function regressionPlane(indices) {{
-    let sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0;
-    for (const index of indices) {{
-      const [x, y, z] = displayPoints[index];
-      sx += x; sy += y; sz += z;
-      sxx += x * x; syy += y * y; sxy += x * y;
-      sxz += x * z; syz += y * z;
-    }}
-    return solve3x3(
-      [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, indices.length]],
-      [sxz, syz, sz]
-    );
-  }}
-
-  function fitSelectedRoadPlane(indices) {{
-    if (indices.length < 12) return null;
-    let active = indices.slice();
-    let coefficients = null;
-    for (let iteration = 0; iteration < 4; iteration += 1) {{
-      coefficients = regressionPlane(active);
-      if (!coefficients) return null;
-      const [a, b, c] = coefficients;
-      const residuals = active.map((index) => {{
-        const [x, y, z] = displayPoints[index];
-        return z - (a * x + b * y + c);
-      }});
-      const residualMedian = median(residuals);
-      const mad = median(residuals.map((value) => Math.abs(value - residualMedian)));
-      const robustSigma = Math.max(1e-9, 1.4826 * mad);
-      const next = active.filter((index, position) => (
-        Math.abs(residuals[position] - residualMedian) <= 2.8 * robustSigma
-      ));
-      if (next.length < 12 || next.length === active.length) break;
-      active = next;
-    }}
-    coefficients = regressionPlane(active);
-    if (!coefficients) return null;
-    const [a, b, c] = coefficients;
-    const normalizer = Math.sqrt(a * a + b * b + 1);
-    const residuals = active.map((index) => {{
-      const [x, y, z] = displayPoints[index];
-      return (z - (a * x + b * y + c)) / normalizer;
-    }});
-    const rmse = Math.sqrt(residuals.reduce((sum, value) => sum + value * value, 0) / residuals.length);
-    return {{ a, b, c, rmse, inlierCount: active.length, selectedCount: indices.length }};
-  }}
-
-  function signedHeightAt(index) {{
-    const [x, y, z] = displayPoints[index];
-    const denominator = Math.sqrt(localPlane.a * localPlane.a + localPlane.b * localPlane.b + 1);
-    return (z - (localPlane.a * x + localPlane.b * y + localPlane.c)) / denominator;
-  }}
-
-  function signedColor(value) {{
-    const road = [155, 155, 155];
-    const target = value < 0 ? [42, 93, 205] : [220, 55, 45];
-    const maximum = value < 0 ? preview.color_max_depth : preview.color_max_height;
-    const t = Math.max(0, Math.min(1, Math.abs(value) / Math.max(1e-12, maximum)));
-    const rgb = road.map((channel, index) => Math.round(channel * (1 - t) + target[index] * t));
-    return `rgb(${{rgb[0]}},${{rgb[1]}},${{rgb[2]}})`;
-  }}
-
-  function updateLocalSignedAndColors() {{
-    measuredSigned = displayPoints.map((_, index) => signedHeightAt(index));
-    colors = measuredSigned.map((value) => signedColor(value));
-  }}
-
-  function calibrationInfo() {{
-    if (calibrationIndices.length !== 2) return null;
-    const a = displayPoints[calibrationIndices[0]];
-    const b = displayPoints[calibrationIndices[1]];
-    const modelDistance = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-    const knownLengthCm = Number(calibrationLengthInput.value);
-    const knownLengthUncertaintyCm = Math.max(0, Number(calibrationUncertaintyInput.value) || 0);
-    if (!(modelDistance > 0) || !(knownLengthCm > 0)) return null;
-    const cmPerModelUnit = knownLengthCm / modelDistance;
-    const distanceUncertainty = Math.sqrt(2) * Math.max(0, localPlane.rmse || 0);
-    const relativeUncertainty = Math.hypot(
-      knownLengthUncertaintyCm / knownLengthCm,
-      distanceUncertainty / modelDistance
-    );
-    return {{
-      indices: calibrationIndices.slice(),
-      sourcePoints: calibrationIndices.map((index) => points[index].slice(0, 3)),
-      roadAlignedPoints: calibrationIndices.map((index) => displayPoints[index].slice()),
-      modelDistance,
-      knownLengthCm,
-      knownLengthUncertaintyCm,
-      cmPerModelUnit,
-      relativeUncertainty,
-      estimatedScaleUncertainty: cmPerModelUnit * relativeUncertainty
-    }};
-  }}
-
-  function sideStatistics(kind) {{
-    const percent = Math.max(0.1, Math.min(25, Number(extremePercentInput.value) || 1));
-    let values = featureIndices.map((index) => ({{ index, signed: measuredSigned[index] }}));
-    values = kind === "protrusion"
-      ? values.filter((item) => item.signed > 0).sort((a, b) => b.signed - a.signed)
-      : values.filter((item) => item.signed < 0).sort((a, b) => a.signed - b.signed);
-    if (!values.length) return null;
-    const count = Math.max(1, Math.ceil(values.length * percent / 100));
-    const extreme = values.slice(0, count);
-    const magnitudes = extreme.map((item) => Math.abs(item.signed));
-    const mean = magnitudes.reduce((sum, value) => sum + value, 0) / magnitudes.length;
-    const variance = magnitudes.length > 1
-      ? magnitudes.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (magnitudes.length - 1)
-      : 0;
-    const standardDeviation = Math.sqrt(variance);
-    const uncertaintyModelUnits = Math.hypot(
-      Math.max(0, localPlane.rmse || 0),
-      standardDeviation / Math.sqrt(magnitudes.length)
-    );
-    const calibration = calibrationInfo();
-    let valueCm = null, uncertaintyCm = null, rangeCm = null;
-    if (calibration) {{
-      valueCm = mean * calibration.cmPerModelUnit;
-      uncertaintyCm = Math.hypot(
-        uncertaintyModelUnits * calibration.cmPerModelUnit,
-        valueCm * calibration.relativeUncertainty
-      );
-      rangeCm = [Math.max(0, valueCm - uncertaintyCm), valueCm + uncertaintyCm];
-    }}
-    return {{
-      kind,
-      sidePointCount: values.length,
-      extremePercent: percent,
-      extremeCount: magnitudes.length,
-      meanModelUnits: mean,
-      singleExtremeModelUnits: magnitudes[0],
-      standardDeviationModelUnits: standardDeviation,
-      uncertaintyModelUnits,
-      valueCm,
-      uncertaintyCm,
-      rangeCm,
-      centroidSourceXYZ: [0, 1, 2].map((axis) => (
-        extreme.reduce((sum, item) => sum + points[item.index][axis], 0) / extreme.length
-      )),
-      centroidRoadAlignedXYZ: [0, 1, 2].map((axis) => (
-        extreme.reduce((sum, item) => sum + displayPoints[item.index][axis], 0) / extreme.length
-      ))
-    }};
-  }}
-
-  function coordinateBounds(indices, coordinates) {{
-    if (!indices.length) return null;
-    const minimum = [Infinity, Infinity, Infinity];
-    const maximum = [-Infinity, -Infinity, -Infinity];
-    for (const index of indices) {{
-      for (let axis = 0; axis < 3; axis += 1) {{
-        minimum[axis] = Math.min(minimum[axis], coordinates[index][axis]);
-        maximum[axis] = Math.max(maximum[axis], coordinates[index][axis]);
-      }}
-    }}
-    return {{ min: minimum, max: maximum }};
-  }}
-
-  function resultCard(title, body) {{
-    return `<div class="measurement-result"><strong>${{title}}</strong><div class="text-small">${{body}}</div></div>`;
-  }}
-
-  function formattedSideResult(label, result) {{
-    if (!result) return resultCard(label, "框選區域中沒有這一側的點。");
-    if (!Number.isFinite(result.valueCm)) {{
-      return resultCard(
-        label,
-        `${{fmt(result.meanModelUnits)}} ± ${{fmt(result.uncertaintyModelUnits)}} 模型單位；請先完成兩點標定。`
-      );
-    }}
-    return resultCard(
-      label,
-      `${{result.valueCm.toFixed(2)}} ± ${{result.uncertaintyCm.toFixed(2)}} cm；範圍 ${{result.rangeCm[0].toFixed(2)}}–${{result.rangeCm[1].toFixed(2)}} cm；採用 ${{result.extremePercent.toFixed(1)}}%／${{result.extremeCount.toLocaleString()}} 點。`
-    );
-  }}
-
-  function updateMeasurementResults() {{
-    const calibration = calibrationInfo();
-    const protrusionResult = featureIndices.length ? sideStatistics("protrusion") : null;
-    const depressionResult = featureIndices.length ? sideStatistics("depression") : null;
-    const calibrationText = calibration
-      ? `A–B 三維距離 ${{fmt(calibration.modelDistance)}} 模型單位；比例 ${{calibration.cmPerModelUnit.toFixed(4)}} ± ${{calibration.estimatedScaleUncertainty.toFixed(4)}} cm/單位。`
-      : `已選 ${{calibrationIndices.length}}/2 點；請點選標定 A 與 B。`;
-    const roadText = roadIndices.length
-      ? `選取 ${{roadIndices.length.toLocaleString()}} 點，穩健內點 ${{localPlane.inlierCount.toLocaleString()}}；RMSE ${{fmt(localPlane.rmse)}} 模型單位${{calibration ? `（${{(localPlane.rmse * calibration.cmPerModelUnit).toFixed(2)}} cm）` : ""}}。`
-      : `尚未框選；目前使用原始全場景基準面，RMSE ${{fmt(localPlane.rmse)}} 模型單位。`;
-    const featureText = featureIndices.length
-      ? `已框選 ${{featureIndices.length.toLocaleString()}} 個預覽點。`
-      : "尚未框選待測區域。";
-    measurementResults.innerHTML = [
-      resultCard("標定比例", calibrationText),
-      resultCard("局部基準路面", roadText),
-      resultCard("待測區域", featureText),
-      formattedSideResult("凸起 +Z", protrusionResult),
-      formattedSideResult("凹陷 −Z", depressionResult)
-    ].join("");
-    latestMeasurement = {{
-      generatedAt: new Date().toISOString(),
-      coordinateConvention: "+Z protrusion/above road, -Z depression/below road",
-      uncertaintyMethod: "quadrature of selected-road RMSE, extreme-group standard error, calibration length uncertainty, and A/B endpoint uncertainty estimated from road RMSE",
-      calibration,
-      roadPlane: {{ ...localPlane, selectedPointCount: roadIndices.length }},
-      roadSelectionBoundsSourceXYZ: coordinateBounds(roadIndices, points),
-      roadSelectionBoundsRoadAlignedXYZ: coordinateBounds(roadIndices, displayPoints),
-      featureSelectionPointCount: featureIndices.length,
-      featureSelectionBoundsSourceXYZ: coordinateBounds(featureIndices, points),
-      featureSelectionBoundsRoadAlignedXYZ: coordinateBounds(featureIndices, displayPoints),
-      protrusion: protrusionResult,
-      depression: depressionResult
-    }};
   }}
 
   function projectCoordinate(coord, width, height, scale, cy, sy, cp, sp, cx, midY) {{
@@ -1098,71 +615,9 @@ def build_depth_preview_fragment(preview, summary):
       }}
     }}
     ctx.globalAlpha = 1;
-    drawMeasurementSelections();
     drawDeepestMarker(width, height, scale, cy, sy, cp, sp, cx, midY);
-    drawHighestMarker(width, height, scale, cy, sy, cp, sp, cx, midY);
-    drawModelCoordinateAxes(width, height, scale, cy, sy, cp, sp, cx, midY);
     drawCoordinateAxes(width, height, cy, sy, cp, sp);
     drawScale(width, height);
-  }}
-
-  function drawIndexOverlay(indices, color) {{
-    if (!indices.length) return;
-    const stride = Math.max(1, Math.ceil(indices.length / 12000));
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.82;
-    for (let position = 0; position < indices.length; position += stride) {{
-      const projectedPoint = projected[indices[position]];
-      if (!projectedPoint) continue;
-      ctx.fillRect(projectedPoint[0] - 1.5, projectedPoint[1] - 1.5, 3, 3);
-    }}
-    ctx.restore();
-  }}
-
-  function drawCalibrationSelection() {{
-    if (!calibrationIndices.length) return;
-    ctx.save();
-    ctx.strokeStyle = "rgb(245, 160, 25)";
-    ctx.fillStyle = "rgb(245, 160, 25)";
-    ctx.lineWidth = 3;
-    if (calibrationIndices.length === 2) {{
-      const a = projected[calibrationIndices[0]];
-      const b = projected[calibrationIndices[1]];
-      ctx.beginPath();
-      ctx.moveTo(a[0], a[1]);
-      ctx.lineTo(b[0], b[1]);
-      ctx.stroke();
-    }}
-    calibrationIndices.forEach((index, position) => {{
-      const point = projected[index];
-      ctx.beginPath();
-      ctx.arc(point[0], point[1], 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "black";
-      ctx.fillText(position === 0 ? "A" : "B", point[0] - 4, point[1] + 4);
-      ctx.fillStyle = "rgb(245, 160, 25)";
-    }});
-    ctx.restore();
-  }}
-
-  function drawMeasurementSelections() {{
-    drawIndexOverlay(roadIndices, "rgb(30, 210, 210)");
-    drawIndexOverlay(featureIndices, "rgb(220, 45, 190)");
-    drawCalibrationSelection();
-    if (!selectionRect) return;
-    const x = Math.min(selectionRect.x0, selectionRect.x1);
-    const y = Math.min(selectionRect.y0, selectionRect.y1);
-    const width = Math.abs(selectionRect.x1 - selectionRect.x0);
-    const height = Math.abs(selectionRect.y1 - selectionRect.y0);
-    ctx.save();
-    ctx.fillStyle = toolMode === "road" ? "rgba(30,210,210,0.13)" : "rgba(220,45,190,0.13)";
-    ctx.strokeStyle = toolMode === "road" ? "rgb(30,210,210)" : "rgb(220,45,190)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([7, 4]);
-    ctx.fillRect(x, y, width, height);
-    ctx.strokeRect(x, y, width, height);
-    ctx.restore();
   }}
 
   function drawAxisArrow(originX, originY, direction, label, color) {{
@@ -1202,71 +657,6 @@ def build_depth_preview_fragment(preview, summary):
     ctx.fillText(`+${{label}}`, endX + dx * 8 - 5, endY + dy * 8 + 4);
     ctx.globalAlpha = 0.72;
     ctx.fillText(`-${{label}}`, negativeX - dx * 15 - 5, negativeY - dy * 10 + 4);
-    ctx.restore();
-  }}
-
-  function drawModelCoordinateAxes(width, height, scale, cy, sy, cp, sp, cx, midY) {{
-    const axisLength = radius * 0.30;
-    const negativeLength = axisLength * 0.28;
-    const origin = [0, 0, 0];
-    const [ox, oy] = projectCoordinate(origin, width, height, scale, cy, sy, cp, sp, cx, midY);
-    const axes = [
-      {{ vector: [1, 0, 0], label: "X", color: "rgb(220,72,72)" }},
-      {{ vector: [0, 1, 0], label: "Y", color: "rgb(60,170,95)" }},
-      {{ vector: [0, 0, 1], label: "Z", color: "rgb(65,120,225)" }}
-    ];
-
-    ctx.save();
-    ctx.font = "600 13px sans-serif";
-    for (const axis of axes) {{
-      const positive = axis.vector.map((value) => value * axisLength);
-      const negative = axis.vector.map((value) => -value * negativeLength);
-      const [px, py] = projectCoordinate(positive, width, height, scale, cy, sy, cp, sp, cx, midY);
-      const [nx, ny] = projectCoordinate(negative, width, height, scale, cy, sy, cp, sp, cx, midY);
-
-      ctx.strokeStyle = axis.color;
-      ctx.lineWidth = 2;
-      ctx.globalAlpha = 0.58;
-      ctx.setLineDash([5, 4]);
-      ctx.beginPath();
-      ctx.moveTo(nx, ny);
-      ctx.lineTo(ox, oy);
-      ctx.stroke();
-
-      ctx.globalAlpha = 1;
-      ctx.setLineDash([]);
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(ox, oy);
-      ctx.lineTo(px, py);
-      ctx.stroke();
-
-      const screenLength = Math.max(1e-9, Math.hypot(px - ox, py - oy));
-      const dx = (px - ox) / screenLength;
-      const dy = (py - oy) / screenLength;
-      const angle = Math.atan2(dy, dx);
-      const arrow = 8;
-      ctx.fillStyle = axis.color;
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(px - arrow * Math.cos(angle - Math.PI / 6), py - arrow * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(px - arrow * Math.cos(angle + Math.PI / 6), py - arrow * Math.sin(angle + Math.PI / 6));
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillText(`+${{axis.label}}`, px + dx * 10 - 5, py + dy * 10 + 4);
-    }}
-
-    const backing = getComputedStyle(root).getPropertyValue("--background").trim() || "white";
-    const text = getComputedStyle(root).getPropertyValue("--foreground").trim() || "black";
-    ctx.fillStyle = backing;
-    ctx.beginPath();
-    ctx.arc(ox, oy, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = text;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = text;
-    ctx.fillText("O (0,0,0)", ox + 11, oy - 10);
     ctx.restore();
   }}
 
@@ -1333,31 +723,8 @@ def build_depth_preview_fragment(preview, summary):
     ctx.fillText(label, labelX, labelY);
   }}
 
-  function drawHighestMarker(width, height, scale, cy, sy, cp, sp, cx, midY) {{
-    if (!highestDisplayPoint) return;
-    const [sx, sy2] = projectCoordinate(highestDisplayPoint, width, height, scale, cy, sy, cp, sp, cx, midY);
-    const marker = "rgb(220, 55, 45)";
-    const backing = getComputedStyle(root).getPropertyValue("--background").trim() || "white";
-    const text = getComputedStyle(root).getPropertyValue("--foreground").trim() || "black";
-    const label = `highest +${{fmt(summary.highest_point_signed_height)}}`;
-    const labelX = Math.max(8, Math.min(width - 112, sx + 12));
-    const labelY = Math.max(18, Math.min(height - 12, sy2 + 22));
-
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = backing;
-    ctx.beginPath();
-    ctx.rect(sx - 9, sy2 - 9, 18, 18);
-    ctx.stroke();
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = marker;
-    ctx.beginPath();
-    ctx.rect(sx - 9, sy2 - 9, 18, 18);
-    ctx.stroke();
-    ctx.fillStyle = text;
-    ctx.fillText(label, labelX, labelY);
-  }}
-
   function drawScale(width, height) {{
+    const maxBar = Math.max(0.001, preview.color_max_depth);
     const barWidth = Math.min(180, width * 0.32);
     const x = width - barWidth - 12;
     const y = height - 20;
@@ -1368,94 +735,7 @@ def build_depth_preview_fragment(preview, summary):
     ctx.lineTo(x + barWidth, y);
     ctx.stroke();
     ctx.fillStyle = ctx.strokeStyle;
-    ctx.fillText(`-${{fmt(preview.color_max_depth)}} / +${{fmt(preview.color_max_height)}} units`, x, y - 6);
-  }}
-
-  function projectedIndicesInside(rectangle) {{
-    const xmin = Math.min(rectangle.x0, rectangle.x1);
-    const xmax = Math.max(rectangle.x0, rectangle.x1);
-    const ymin = Math.min(rectangle.y0, rectangle.y1);
-    const ymax = Math.max(rectangle.y0, rectangle.y1);
-    const selected = [];
-    for (let index = 0; index < projected.length; index += 1) {{
-      const [x, y] = projected[index];
-      if (x >= xmin && x <= xmax && y >= ymin && y <= ymax) selected.push(index);
-    }}
-    return selected;
-  }}
-
-  function finishBoxSelection() {{
-    if (!selectionRect) return;
-    const width = Math.abs(selectionRect.x1 - selectionRect.x0);
-    const height = Math.abs(selectionRect.y1 - selectionRect.y0);
-    if (width < 4 || height < 4) {{
-      readout.textContent = "框選範圍太小，請拖曳較大的矩形。";
-      selectionRect = null;
-      render();
-      return;
-    }}
-    const selected = projectedIndicesInside(selectionRect);
-    if (toolMode === "road") {{
-      const fitted = fitSelectedRoadPlane(selected);
-      if (!fitted) {{
-        readout.textContent = "基準路面點太少或分布退化，請重新框選較大的完整路面。";
-      }} else {{
-        roadIndices = selected;
-        localPlane = fitted;
-        updateLocalSignedAndColors();
-        readout.textContent = `已用 ${{fitted.inlierCount.toLocaleString()}} 個內點重新擬合局部基準路面。`;
-      }}
-    }} else if (toolMode === "feature") {{
-      featureIndices = selected;
-      readout.textContent = `已選取 ${{selected.length.toLocaleString()}} 個待測點。`;
-    }}
-    selectionRect = null;
-    updateMeasurementResults();
-    render();
-  }}
-
-  function pickCalibrationPoint(x, y) {{
-    const index = nearestPoint(x, y);
-    if (index < 0) {{
-      readout.textContent = "附近沒有可選取的點，請點在點雲上。";
-      return;
-    }}
-    if (calibrationIndices.length >= 2) calibrationIndices = [];
-    calibrationIndices.push(index);
-    readout.textContent = calibrationIndices.length === 1
-      ? "已選標定點 A，請再點選標定點 B。"
-      : "標定點 A、B 已完成，可調整實際長度與長度誤差。";
-    updateMeasurementResults();
-    render();
-  }}
-
-  function clearInteractiveMeasurement() {{
-    calibrationIndices = [];
-    roadIndices = [];
-    featureIndices = [];
-    selectionRect = null;
-    localPlane = {{ a: 0, b: 0, c: 0, rmse: Number(summary.plane_rmse) || 0 }};
-    measuredSigned = displayPoints.map((point) => point[2]);
-    colors = baseColors.slice();
-    latestMeasurement = null;
-    updateMeasurementResults();
-    readout.textContent = "互動量測已清除。";
-    render();
-  }}
-
-  function downloadMeasurementJson() {{
-    updateMeasurementResults();
-    if (!latestMeasurement) return;
-    const blob = new Blob([JSON.stringify(latestMeasurement, null, 2)], {{ type: "application/json" }});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "interactive_height_depth_measurement.json";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-    readout.textContent = "已下載互動量測 JSON。";
+    ctx.fillText(`${{fmt(maxBar)}} units`, x, y - 6);
   }}
 
   function nearestPoint(x, y) {{
@@ -1476,44 +756,15 @@ def build_depth_preview_fragment(preview, summary):
 
   canvas.addEventListener("pointerdown", (event) => {{
     if (event.button === 2) event.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const localX = event.clientX - rect.left;
-    const localY = event.clientY - rect.top;
     pointerDown = true;
-    pointerStartX = localX;
-    pointerStartY = localY;
-    if (event.button === 2 || event.shiftKey) {{
-      dragMode = "roll";
-    }} else if (toolMode === "road" || toolMode === "feature") {{
-      dragMode = "select";
-      selectionRect = {{ x0: localX, y0: localY, x1: localX, y1: localY }};
-    }} else if (toolMode === "calibration") {{
-      dragMode = "calibration";
-    }} else {{
-      dragMode = "orbit";
-    }}
+    dragMode = event.button === 2 || event.shiftKey ? "roll" : "orbit";
     lastX = event.clientX;
     lastY = event.clientY;
     canvas.setPointerCapture(event.pointerId);
   }});
   canvas.addEventListener("pointerup", (event) => {{
-    const rect = canvas.getBoundingClientRect();
-    const localX = event.clientX - rect.left;
-    const localY = event.clientY - rect.top;
-    if (dragMode === "select") {{
-      if (selectionRect) {{
-        selectionRect.x1 = localX;
-        selectionRect.y1 = localY;
-      }}
-      finishBoxSelection();
-    }} else if (
-      dragMode === "calibration" &&
-      Math.hypot(localX - pointerStartX, localY - pointerStartY) <= 6
-    ) {{
-      pickCalibrationPoint(localX, localY);
-    }}
     pointerDown = false;
-    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    canvas.releasePointerCapture(event.pointerId);
   }});
   canvas.addEventListener("pointerleave", () => {{
     pointerDown = false;
@@ -1524,12 +775,9 @@ def build_depth_preview_fragment(preview, summary):
   canvas.addEventListener("pointermove", (event) => {{
     const rect = canvas.getBoundingClientRect();
     if (pointerDown) {{
-      if (dragMode === "select") {{
-        selectionRect.x1 = event.clientX - rect.left;
-        selectionRect.y1 = event.clientY - rect.top;
-      }} else if (dragMode === "roll") {{
+      if (dragMode === "roll") {{
         setRoll(roll + (event.clientX - lastX) * 0.008);
-      }} else if (dragMode === "orbit") {{
+      }} else {{
         yaw += (event.clientX - lastX) * 0.008;
         pitch = Math.max(-1.45, Math.min(1.45, pitch + (event.clientY - lastY) * 0.008));
       }}
@@ -1538,15 +786,10 @@ def build_depth_preview_fragment(preview, summary):
       setPressed("");
       render();
     }} else {{
-      const now = performance.now();
-      if (now - lastHoverTime < 70) return;
-      lastHoverTime = now;
       const selected = nearestPoint(event.clientX - rect.left, event.clientY - rect.top);
       if (selected >= 0) {{
         const p = points[selected];
-        const signed = measuredSigned[selected];
-        const kind = signed < 0 ? "depression" : "protrusion";
-        readout.textContent = `${{kind}} signed height ${{fmt(signed)}} at (${{fmt(p[0])}}, ${{fmt(p[1])}}, ${{fmt(p[2])}})`;
+        readout.textContent = `signed height ${{fmt(p[3])}}, depth ${{fmt(p[4])}} at (${{fmt(p[0])}}, ${{fmt(p[1])}}, ${{fmt(p[2])}})`;
       }}
     }}
   }});
@@ -1575,34 +818,12 @@ def build_depth_preview_fragment(preview, summary):
         if (summary.deepest_point_xyz) {{
           readout.textContent = `deepest signed height ${{fmt(summary.deepest_point_signed_distance)}} at (${{summary.deepest_point_xyz.map(fmt).join(", ")}})`;
         }}
-      }} else if (view === "highest") {{
-        yaw = -0.72;
-        pitch = -0.58;
-        zoom = 1.55;
-        if (summary.highest_point_xyz) {{
-          readout.textContent = `highest signed height +${{fmt(summary.highest_point_signed_height)}} at (${{summary.highest_point_xyz.map(fmt).join(", ")}})`;
-        }}
       }} else {{
         yaw = -0.72;
         pitch = -0.58;
         zoom = 1.0;
       }}
       setPressed(view === "reset" ? "oblique" : view);
-      render();
-    }});
-  }});
-  root.querySelectorAll("[data-tool]").forEach((button) => {{
-    button.addEventListener("click", () => setToolMode(button.dataset.tool));
-  }});
-  root.querySelector('[data-action="clear-measurement"]').addEventListener(
-    "click", clearInteractiveMeasurement
-  );
-  root.querySelector('[data-action="export-measurement"]').addEventListener(
-    "click", downloadMeasurementJson
-  );
-  [calibrationLengthInput, calibrationUncertaintyInput, extremePercentInput].forEach((input) => {{
-    input.addEventListener("input", () => {{
-      updateMeasurementResults();
       render();
     }});
   }});
@@ -1623,9 +844,7 @@ def build_depth_preview_fragment(preview, summary):
   }}
   setRoll(0);
   setPressed("oblique");
-  updateMeasurementResults();
   resizeCanvas();
-  setToolMode("orbit");
 }})();
 </script>
 """
@@ -1847,42 +1066,6 @@ def orient_plane_to_up_vector(normal, offset, up_vector):
     }
 
 
-def orient_plane_from_camera_centers(normal, offset, camera_centers, threshold):
-    """Orient the plane so the well-separated COLMAP camera side is +Z/up."""
-    if camera_centers is None or len(camera_centers) < 3:
-        return normal, offset, None
-
-    signed = plane_values(camera_centers, normal, offset)
-    signed = signed[np.isfinite(signed)]
-    separation = max(float(threshold) * 2.0, 1e-6)
-    strong = np.abs(signed) >= separation
-    if int(strong.sum()) < 3:
-        return normal, offset, None
-
-    positive_fraction = float(np.mean(signed[strong] > 0.0))
-    agreement = max(positive_fraction, 1.0 - positive_fraction)
-    if agreement < 0.8:
-        return normal, offset, None
-
-    if positive_fraction < 0.5:
-        normal = -normal
-        offset = -offset
-        signed = -signed
-        positive_fraction = 1.0 - positive_fraction
-
-    return normal, offset, {
-        "method": "colmap_camera_centers",
-        "up_vector": normal.tolist(),
-        "normal_up_alignment": 1.0,
-        "depression_sign": "negative",
-        "camera_count": int(len(camera_centers)),
-        "camera_strong_side_samples": int(strong.sum()),
-        "camera_side_agreement": positive_fraction,
-        "camera_signed_distance_median": float(np.median(signed)),
-        "surface_normal_agreement": None,
-    }
-
-
 def orient_plane_from_surface_normals(normal, offset, vertex_normals, inlier_mask):
     if vertex_normals is None or len(vertex_normals) != len(inlier_mask):
         return normal, offset, None
@@ -1934,11 +1117,6 @@ def deepest_percent_indices(distances, percent):
     return np.argpartition(distances, count - 1)[:count]
 
 
-def highest_percent_indices(distances, percent):
-    count = max(1, int(np.ceil(len(distances) * percent / 100.0)))
-    return np.argpartition(-distances, count - 1)[:count]
-
-
 def measure_depth(points, normal, offset, pit_side, bottom_percent):
     signed = plane_values(points, normal, offset)
     normal, offset, signed, chosen_side = orient_for_depth(
@@ -1950,11 +1128,6 @@ def measure_depth(points, normal, offset, pit_side, bottom_percent):
     bottom_indices = deepest_percent_indices(signed, bottom_percent)
     bottom_distances = signed[bottom_indices]
     bottom_points = points[bottom_indices]
-    highest_index = int(np.argmax(signed))
-    highest_distance = float(signed[highest_index])
-    top_indices = highest_percent_indices(signed, bottom_percent)
-    top_distances = signed[top_indices]
-    top_points = points[top_indices]
 
     return {
         "normal": normal,
@@ -1971,15 +1144,6 @@ def measure_depth(points, normal, offset, pit_side, bottom_percent):
         "bottom_mean_depth": max(0.0, -float(bottom_distances.mean())),
         "bottom_percentile_depth": max(0.0, -float(bottom_distances.max())),
         "bottom_centroid_xyz": bottom_points.mean(axis=0).tolist(),
-        "max_protrusion": max(0.0, highest_distance),
-        "highest_point_xyz": points[highest_index].tolist(),
-        "highest_point_signed_height": highest_distance,
-        "top_count": int(len(top_indices)),
-        "top_mean_signed_height": float(top_distances.mean()),
-        "top_percentile_signed_height": float(top_distances.min()),
-        "top_mean_height": max(0.0, float(top_distances.mean())),
-        "top_percentile_height": max(0.0, float(top_distances.min())),
-        "top_centroid_xyz": top_points.mean(axis=0).tolist(),
     }
 
 
@@ -2057,20 +1221,6 @@ def parse_args():
             "the plane normal is oriented toward it and depressions are measured negative."
         ),
     )
-    parser.add_argument(
-        "--colmap-model",
-        type=Path,
-        default=None,
-        help=(
-            "Optional COLMAP sparse model directory (or images.bin) used to orient +Z "
-            "toward the camera side. By default, nearby sparse/0/images.bin is detected automatically."
-        ),
-    )
-    parser.add_argument(
-        "--no-camera-orientation",
-        action="store_true",
-        help="Disable automatic +Z orientation from a nearby COLMAP sparse model.",
-    )
     parser.add_argument("--summary-json", type=Path, default=None)
     parser.add_argument(
         "--colored-ply",
@@ -2100,15 +1250,6 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--color-max-height",
-        type=float,
-        default=None,
-        help=(
-            "Protrusion height mapped to the strongest red. Defaults to the "
-            "highest --bottom-percent threshold."
-        ),
-    )
-    parser.add_argument(
         "--preview-json",
         type=Path,
         default=None,
@@ -2118,16 +1259,13 @@ def parse_args():
         "--preview-html",
         type=Path,
         default=None,
-        help=(
-            "Optional interactive HTML preview with 3D axes, adjustable two-point "
-            "scale calibration, road/feature box selection, and uncertainty estimates."
-        ),
+        help="Optional interactive HTML fragment preview with the deepest point marked.",
     )
     parser.add_argument(
         "--preview-points",
         type=int,
-        default=120000,
-        help="Number of sampled points embedded in the HTML preview (default: 120000).",
+        default=60000,
+        help="Number of sampled points embedded in the HTML preview (default: 60000).",
     )
     parser.add_argument(
         "--deepest-marker",
@@ -2210,24 +1348,13 @@ def main():
     )
     orientation = None
     measurement_pit_side = args.pit_side
-    camera_images_path = None
     if args.up_vector is not None:
         normal, offset, orientation = orient_plane_to_up_vector(normal, offset, args.up_vector)
         measurement_pit_side = "negative"
     elif args.pit_side == "auto":
-        if not args.no_camera_orientation:
-            camera_images_path = find_colmap_images_bin(args.input, args.colmap_model)
-            if camera_images_path is not None:
-                camera_centers = load_colmap_camera_centers(camera_images_path)
-                normal, offset, orientation = orient_plane_from_camera_centers(
-                    normal, offset, camera_centers, threshold
-                )
-                if orientation is not None:
-                    orientation["colmap_images_bin"] = str(camera_images_path)
-        if orientation is None:
-            normal, offset, orientation = orient_plane_from_surface_normals(
-                normal, offset, plane_vertex_normals, inlier_mask
-            )
+        normal, offset, orientation = orient_plane_from_surface_normals(
+            normal, offset, plane_vertex_normals, inlier_mask
+        )
         if orientation is not None:
             measurement_pit_side = "negative"
 
@@ -2257,9 +1384,6 @@ def main():
     color_max_depth = args.color_max_depth
     if color_max_depth is None:
         color_max_depth = depth["bottom_percentile_depth"] or depth["max_depth"] or 1.0
-    color_max_height = args.color_max_height
-    if color_max_height is None:
-        color_max_height = depth["top_percentile_height"] or depth["max_protrusion"] or 1.0
 
     plane_rmse = float(np.sqrt(np.mean(plane_distances[inlier_mask] ** 2)))
     result = {
@@ -2305,22 +1429,9 @@ def main():
             "bottom_percentile_depth": depth["bottom_percentile_depth"],
             "bottom_centroid_xyz": depth["bottom_centroid_xyz"],
         },
-        "protrusion": {
-            "max_height": depth["max_protrusion"],
-            "highest_point_xyz": depth["highest_point_xyz"],
-            "highest_point_signed_height": depth["highest_point_signed_height"],
-            "top_percent": depth["bottom_percent"],
-            "top_count": depth["top_count"],
-            "top_mean_signed_height": depth["top_mean_signed_height"],
-            "top_percentile_signed_height": depth["top_percentile_signed_height"],
-            "top_mean_height": depth["top_mean_height"],
-            "top_percentile_height": depth["top_percentile_height"],
-            "top_centroid_xyz": depth["top_centroid_xyz"],
-        },
         "depth_color": {
             "colored_vertices": int(color_mask.sum()),
             "color_max_depth": float(color_max_depth),
-            "color_max_height": float(color_max_height),
         },
     }
 
@@ -2332,7 +1443,6 @@ def main():
             depth["offset"],
             color_mask,
             color_max_depth,
-            color_max_height,
         )
 
     if args.aligned_ply:
@@ -2343,7 +1453,6 @@ def main():
             depth["offset"],
             color_mask,
             color_max_depth,
-            color_max_height,
             road_frame,
         )
 
@@ -2358,7 +1467,6 @@ def main():
             color_mask,
             args.preview_points,
             color_max_depth,
-            color_max_height,
             args.seed,
         )
 
@@ -2409,25 +1517,6 @@ def main():
         f"{result['coordinate_convention']['orientation']['method']}"
     )
     print(f"  color_max_depth: {result['depth_color']['color_max_depth']:.9g}")
-
-    print()
-    print("Protrusion in model units (road plane = 0, protrusion = positive)")
-    print(
-        "  highest_point_signed_height: "
-        f"{result['protrusion']['highest_point_signed_height']:.9g}"
-    )
-    print(f"  max_height_magnitude: {result['protrusion']['max_height']:.9g}")
-    print(
-        f"  highest_{result['protrusion']['top_percent']:.3g}%_mean_signed_height: "
-        f"{result['protrusion']['top_mean_signed_height']:.9g}"
-    )
-    print(
-        f"  highest_{result['protrusion']['top_percent']:.3g}%_percentile_signed_height: "
-        f"{result['protrusion']['top_percentile_signed_height']:.9g}"
-    )
-    print(f"  highest_point_xyz: {result['protrusion']['highest_point_xyz']}")
-    print(f"  top_centroid_xyz: {result['protrusion']['top_centroid_xyz']}")
-    print(f"  color_max_height: {result['depth_color']['color_max_height']:.9g}")
 
     if args.colored_ply:
         print()

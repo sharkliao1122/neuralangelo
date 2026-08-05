@@ -1,0 +1,151 @@
+{
+  "generatedAt": "2026-08-05T10:42:56.675Z",
+  "coordinateConvention": "+Z protrusion/above road, -Z depression/below road",
+  "uncertaintyMethod": "quadrature of selected-road RMSE, extreme-group standard error, calibration length uncertainty, and A/B endpoint uncertainty estimated from road RMSE",
+  "calibration": {
+    "indices": [
+      13409,
+      97453
+    ],
+    "sourcePoints": [
+      [
+        0.2295,
+        -3.3688,
+        3.1705
+      ],
+      [
+        -0.0402,
+        5.3692,
+        -2.6481
+      ]
+    ],
+    "roadAlignedPoints": [
+      [
+        0.17815680877922713,
+        3.505603333947853,
+        -0.008871520490669083
+      ],
+      [
+        -0.08957138866257847,
+        -6.992395923935896,
+        0.03380451220728142
+      ]
+    ],
+    "modelDistance": 10.501499323906087,
+    "knownLengthCm": 414,
+    "knownLengthUncertaintyCm": 0.5,
+    "cmPerModelUnit": 39.422942118136575,
+    "relativeUncertainty": 0.0012841105234268214,
+    "estimatedScaleUncertainty": 0.05062341483834564
+  },
+  "roadPlane": {
+    "a": -0.06344202744391385,
+    "b": 0.002309451790827133,
+    "c": -0.018751185619277033,
+    "rmse": 0.003239583755532458,
+    "inlierCount": 529,
+    "selectedCount": 978,
+    "selectedPointCount": 978
+  },
+  "roadSelectionBoundsSourceXYZ": {
+    "min": [
+      -1.2309,
+      -0.7167,
+      0.1068
+    ],
+    "max": [
+      -0.3651,
+      1.2438,
+      1.3587
+    ]
+  },
+  "roadSelectionBoundsRoadAlignedXYZ": {
+    "min": [
+      -1.2841958877511248,
+      -1.9840540713690253,
+      -0.004719690547264288
+    ],
+    "max": [
+      -0.4166312857008257,
+      0.20128456872351477,
+      0.21642522046666376
+    ]
+  },
+  "featureSelectionPointCount": 28530,
+  "featureSelectionBoundsSourceXYZ": {
+    "min": [
+      -0.3401,
+      -0.5308,
+      -2.2588
+    ],
+    "max": [
+      0.2636,
+      4.8538,
+      1.3036
+    ]
+  },
+  "featureSelectionBoundsRoadAlignedXYZ": {
+    "min": [
+      -0.391163685997741,
+      -6.331599737205072,
+      -0.034562657681200815
+    ],
+    "max": [
+      0.2121735302308344,
+      0.09632801856730205,
+      0.014385242303122492
+    ]
+  },
+  "protrusion": {
+    "kind": "protrusion",
+    "sidePointCount": 27435,
+    "extremePercent": 1,
+    "extremeCount": 275,
+    "meanModelUnits": 0.04705861569948192,
+    "singleExtremeModelUnits": 0.05317794392151796,
+    "standardDeviationModelUnits": 0.0013869418817058399,
+    "uncertaintyModelUnits": 0.003240663180045614,
+    "valueCm": 1.8551890828803088,
+    "uncertaintyCm": 0.12777868604782497,
+    "rangeCm": [
+      1.7274103968324839,
+      1.9829677689281338
+    ],
+    "centroidSourceXYZ": [
+      0.23484800000000006,
+      3.135589090909089,
+      -1.1552476363636357
+    ],
+    "centroidRoadAlignedXYZ": [
+      0.1843911460892445,
+      -4.305857185954054,
+      0.006759845378510065
+    ]
+  },
+  "depression": {
+    "kind": "depression",
+    "sidePointCount": 1095,
+    "extremePercent": 1,
+    "extremeCount": 11,
+    "meanModelUnits": 0.018687893885622982,
+    "singleExtremeModelUnits": 0.021103565640316565,
+    "standardDeviationModelUnits": 0.001606824312897838,
+    "uncertaintyModelUnits": 0.0032756098165452993,
+    "valueCm": 0.7367317589627932,
+    "uncertaintyCm": 0.12913764154503393,
+    "rangeCm": [
+      0.6075941174177593,
+      0.8658694005078271
+    ],
+    "centroidSourceXYZ": [
+      -0.23695454545454545,
+      3.856236363636364,
+      -1.5553727272727271
+    ],
+    "centroidRoadAlignedXYZ": [
+      -0.2902702126376079,
+      -5.127628624941553,
+      -0.030903380155766283
+    ]
+  }
+}

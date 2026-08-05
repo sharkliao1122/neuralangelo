@@ -156,14 +156,36 @@
       0.9636196856101052
     ]
   },
+  "protrusion": {
+    "max_height": 0.21782538894191594,
+    "highest_point_xyz": [
+      -5.096599578857422,
+      0.42330479621887207,
+      6.685889720916748
+    ],
+    "highest_point_signed_height": 0.21782538894191594,
+    "top_percent": 1.0,
+    "top_count": 8225,
+    "top_mean_signed_height": 0.18201907474780396,
+    "top_percentile_signed_height": 0.17031893469787285,
+    "top_mean_height": 0.18201907474780396,
+    "top_percentile_height": 0.17031893469787285,
+    "top_centroid_xyz": [
+      -4.16457822851497,
+      0.3709599101744376,
+      6.669422525910258
+    ]
+  },
   "depth_color": {
     "colored_vertices": 822499,
-    "color_max_depth": 0.20988501257670045
+    "color_max_depth": 0.20988501257670045,
+    "color_max_height": 0.17031893469787285
   },
   "road_aligned_ply": {
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_road_aligned_depth_map.ply",
     "colored_vertices": 822499,
     "color_max_depth": 0.20988501257670045,
+    "color_max_height": 0.17031893469787285,
     "bounds": {
       "min": [
         -9.098731737730073,
@@ -185,7 +207,7 @@
   },
   "preview_json": {
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_depth_preview_points.json",
-    "preview_points": 60000
+    "preview_points": 120000
   },
   "preview_html": {
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\kengdong\\depth\\meshed-poisson-kengdong_960_proxy_1500k_depth_preview.html"

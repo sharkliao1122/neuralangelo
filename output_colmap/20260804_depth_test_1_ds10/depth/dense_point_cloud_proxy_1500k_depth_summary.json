@@ -1,0 +1,219 @@
+{
+  "input": "C:\\research\\neuralangelo_test\\output_colmap\\20260804_depth_test_1_ds10\\depth\\dense_point_cloud_proxy_1500k.ply",
+  "units": "model_units",
+  "coordinate_convention": {
+    "source_xyz": "unchanged input coordinates",
+    "local_signed_height": "normal_x*x + normal_y*y + normal_z*z + offset",
+    "reference_road_plane": 0.0,
+    "depression": "negative",
+    "above_road": "positive",
+    "depth_magnitude": "max(0, -local_signed_height)",
+    "orientation": {
+      "method": "colmap_camera_centers",
+      "up_vector": [
+        -0.05607494424976955,
+        -0.5511975445423638,
+        -0.8324883587881899
+      ],
+      "normal_up_alignment": 1.0,
+      "depression_sign": "negative",
+      "camera_count": 230,
+      "camera_strong_side_samples": 230,
+      "camera_side_agreement": 1.0,
+      "camera_signed_distance_median": 0.7747023198667593,
+      "surface_normal_agreement": null,
+      "colmap_images_bin": "C:\\research\\neuralangelo_test\\output_colmap\\20260804_depth_test_1_ds10\\sparse\\0\\images.bin",
+      "final_local_up_vector": [
+        -0.05607494424976955,
+        -0.5511975445423638,
+        -0.8324883587881899
+      ]
+    },
+    "road_aligned_frame": {
+      "origin": [
+        0.05112603981463673,
+        -0.44520166400638345,
+        1.236119275457992
+      ],
+      "x_axis": [
+        0.9984265624608478,
+        -0.030957080613562858,
+        -0.046755304859450265
+      ],
+      "y_axis": [
+        0.0,
+        -0.8338002914669401,
+        0.5520661862038336
+      ],
+      "z_axis_up": [
+        -0.05607494424976955,
+        -0.5511975445423638,
+        -0.8324883587881899
+      ],
+      "negative_z": "pothole_down",
+      "world_to_local_rotation": [
+        [
+          0.9984265624608478,
+          -0.030957080613562858,
+          -0.046755304859450265
+        ],
+        [
+          0.0,
+          -0.8338002914669401,
+          0.5520661862038336
+        ],
+        [
+          -0.05607494424976955,
+          -0.5511975445423638,
+          -0.8324883587881899
+        ]
+      ]
+    }
+  },
+  "vertices_loaded": 1500628,
+  "working_vertices": 1500628,
+  "plane_vertices": 1500628,
+  "depth_vertices": 1500628,
+  "working_bounds": {
+    "min": [
+      -2.723544120788574,
+      -6.278657913208008,
+      -2.740105390548706
+    ],
+    "max": [
+      3.359191417694092,
+      5.476534843444824,
+      5.290384292602539
+    ],
+    "size": [
+      6.082735538482666,
+      11.755192756652832,
+      8.030489683151245
+    ]
+  },
+  "plane_bounds": {
+    "min": [
+      -2.723544120788574,
+      -6.278657913208008,
+      -2.740105390548706
+    ],
+    "max": [
+      3.359191417694092,
+      5.476534843444824,
+      5.290384292602539
+    ],
+    "size": [
+      6.082735538482666,
+      11.755192756652832,
+      8.030489683151245
+    ]
+  },
+  "depth_bounds": {
+    "min": [
+      -2.723544120788574,
+      -6.278657913208008,
+      -2.740105390548706
+    ],
+    "max": [
+      3.359191417694092,
+      5.476534843444824,
+      5.290384292602539
+    ],
+    "size": [
+      6.082735538482666,
+      11.755192756652832,
+      8.030489683151245
+    ]
+  },
+  "ransac_threshold": 0.03870343919863435,
+  "ransac_iterations": 512,
+  "plane": {
+    "normal": [
+      -0.05607494424976955,
+      -0.5511975445423638,
+      -0.8324883587881899
+    ],
+    "offset": 0.7865277326982945,
+    "equation": "normal_x*x + normal_y*y + normal_z*z + offset = 0",
+    "inliers": 1228901,
+    "inlier_ratio": 0.818924476952316,
+    "inlier_rmse": 0.008026701020829495
+  },
+  "depth": {
+    "pit_side": "negative",
+    "max_depth": 0.09994618188385818,
+    "deepest_point_xyz": [
+      -0.7716280221939087,
+      2.6167802810668945,
+      -0.615768313407898
+    ],
+    "deepest_point_signed_distance": -0.09994618188385818,
+    "bottom_percent": 1.0,
+    "bottom_count": 15007,
+    "bottom_mean_signed_height": -0.02223260357980832,
+    "bottom_percentile_signed_height": -0.018559343444204845,
+    "bottom_mean_depth": 0.02223260357980832,
+    "bottom_percentile_depth": 0.018559343444204845,
+    "bottom_centroid_xyz": [
+      -0.4372362069030458,
+      4.485570012218369,
+      -1.968984703629357
+    ]
+  },
+  "protrusion": {
+    "max_height": 0.4551951745892697,
+    "highest_point_xyz": [
+      0.5824564099311829,
+      -2.7798209190368652,
+      2.199312210083008
+    ],
+    "highest_point_signed_height": 0.4551951745892697,
+    "top_percent": 1.0,
+    "top_count": 15007,
+    "top_mean_signed_height": 0.3664462277808165,
+    "top_percentile_signed_height": 0.3648618248351343,
+    "top_mean_height": 0.3664462277808165,
+    "top_percentile_height": 0.3648618248351343,
+    "top_centroid_xyz": [
+      0.055589292805141445,
+      -2.7828209457132465,
+      2.3433942228819804
+    ]
+  },
+  "depth_color": {
+    "colored_vertices": 1500628,
+    "color_max_depth": 0.018559343444204845,
+    "color_max_height": 0.3648618248351343
+  },
+  "road_aligned_ply": {
+    "path": "C:\\research\\neuralangelo_test\\output_colmap\\20260804_depth_test_1_ds10\\depth\\dense_point_cloud_proxy_1500k_road_aligned_depth_map.ply",
+    "colored_vertices": 1500628,
+    "color_max_depth": 0.018559343444204845,
+    "color_max_height": 0.3648618248351343,
+    "bounds": {
+      "min": [
+        -2.7798152520891994,
+        -7.121008945870082,
+        -0.09994618188385818
+      ],
+      "max": [
+        3.3132383582473643,
+        7.102160146718568,
+        0.45519517458926967
+      ],
+      "size": [
+        6.093053610336564,
+        14.22316909258865,
+        0.5551413564731278
+      ]
+    },
+    "axis_convention": "+Z above road, -Z pothole/down"
+  },
+  "preview_json": {
+    "path": "C:\\research\\neuralangelo_test\\output_colmap\\20260804_depth_test_1_ds10\\depth\\dense_point_cloud_proxy_1500k_depth_preview_points.json",
+    "preview_points": 120000
+  },
+  "preview_html": {
+    "path": "C:\\research\\neuralangelo_test\\output_colmap\\20260804_depth_test_1_ds10\\depth\\dense_point_cloud_proxy_1500k_depth_preview.html"
+  }
+}

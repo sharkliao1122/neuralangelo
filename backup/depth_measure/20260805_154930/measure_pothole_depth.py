@@ -481,7 +481,6 @@ def build_depth_preview_fragment(preview, summary):
             "top_mean_signed_height": protrusion.get("top_mean_signed_height"),
             "highest_point_xyz": protrusion.get("highest_point_xyz"),
             "inlier_ratio": plane.get("inlier_ratio"),
-            "plane_rmse": plane.get("inlier_rmse"),
             "plane_normal": plane.get("normal"),
             "road_aligned_frame": coordinate_convention.get("road_aligned_frame"),
         },
@@ -531,33 +530,6 @@ def build_depth_preview_fragment(preview, summary):
     </label>
   </div>
 
-  <div class="measurement-panel card">
-    <div class="measurement-title">互動式比例與高低差量測</div>
-    <div class="measurement-inputs">
-      <label class="form-label">標定實際長度 (cm)
-        <input type="number" min="0.001" step="0.1" value="414" data-role="calibration-length">
-      </label>
-      <label class="form-label">標定長度誤差 (cm)
-        <input type="number" min="0" step="0.1" value="0.5" data-role="calibration-uncertainty">
-      </label>
-      <label class="form-label">極值區域比例 (%)
-        <input type="number" min="0.1" max="25" step="0.1" value="1" data-role="extreme-percent">
-      </label>
-    </div>
-    <div class="viz-controls" aria-label="Measurement tools">
-      <button type="button" class="btn" data-tool="calibration">1. 點選標定 A / B</button>
-      <button type="button" class="btn" data-tool="road">2. 框選基準路面</button>
-      <button type="button" class="btn" data-tool="feature">3. 框選凸起／凹陷</button>
-      <button type="button" class="btn btn-ghost" data-tool="orbit">旋轉模式</button>
-      <button type="button" class="btn btn-ghost" data-action="clear-measurement">清除量測</button>
-      <button type="button" class="btn" data-action="export-measurement">下載結果 JSON</button>
-    </div>
-    <div class="text-small text-muted">
-      建議先按 Top，再框選。標定使用兩點的三維距離；框選使用目前投影內的點，但平面與高低差均以三維座標計算。
-    </div>
-    <div class="measurement-results" data-role="measurement-results"></div>
-  </div>
-
   <div class="depth-map-stage">
     <canvas data-role="canvas" role="img" aria-label="Road-aligned 3D point cloud colored by depression and protrusion"></canvas>
     <div class="text-small depth-readout" data-role="readout">Depth map</div>
@@ -573,7 +545,6 @@ def build_depth_preview_fragment(preview, summary):
   <div class="text-small text-muted">
     Left-drag orbits X/Y; right-drag or Shift + left-drag rotates around local Z; wheel zooms. +Z is above the road and -Z is pothole/down.
   </div>
-  <div class="text-small text-muted" data-role="model-origin"></div>
 </div>
 
 <style>
@@ -613,46 +584,11 @@ def build_depth_preview_fragment(preview, summary):
   height: 0.65rem;
   background: linear-gradient(90deg, rgb(42,93,205), rgb(155,155,155));
 }}
-#pothole-depth-map-vis .measurement-panel {{
-  display: grid;
-  gap: 0.65rem;
-  padding: 0.75rem;
-}}
-#pothole-depth-map-vis .measurement-title {{
-  font-weight: 650;
-}}
-#pothole-depth-map-vis .measurement-inputs {{
-  display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
-  gap: 0.65rem;
-}}
-#pothole-depth-map-vis .measurement-inputs input {{
-  width: 100%;
-  box-sizing: border-box;
-}}
-#pothole-depth-map-vis .measurement-results {{
-  display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 0.5rem;
-}}
-#pothole-depth-map-vis .measurement-result {{
-  border: 1px solid var(--border);
-  padding: 0.55rem;
-  background: color-mix(in srgb, var(--background) 88%, var(--muted));
-}}
-#pothole-depth-map-vis button[aria-pressed="true"] {{
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
-}}
 #pothole-depth-map-vis .height-legend-bar {{
   height: 0.65rem;
   background: linear-gradient(90deg, rgb(155,155,155), rgb(220,55,45));
 }}
 @media (max-width: 520px) {{
-  #pothole-depth-map-vis .measurement-inputs,
-  #pothole-depth-map-vis .measurement-results {{
-    grid-template-columns: 1fr;
-  }}
   #pothole-depth-map-vis .depth-map-stage,
   #pothole-depth-map-vis canvas {{
     min-height: 260px;
@@ -671,18 +607,12 @@ def build_depth_preview_fragment(preview, summary):
   const sizeInput = root.querySelector('[data-role="point-size"]');
   const rollInput = root.querySelector('[data-role="z-rotation"]');
   const rollValue = root.querySelector('[data-role="z-rotation-value"]');
-  const calibrationLengthInput = root.querySelector('[data-role="calibration-length"]');
-  const calibrationUncertaintyInput = root.querySelector('[data-role="calibration-uncertainty"]');
-  const extremePercentInput = root.querySelector('[data-role="extreme-percent"]');
-  const measurementResults = root.querySelector('[data-role="measurement-results"]');
   const points = preview.points;
-  const baseColors = points.map((p) => `rgb(${{p[5]}},${{p[6]}},${{p[7]}})`);
-  let colors = baseColors.slice();
+  const colors = points.map((p) => `rgb(${{p[5]}},${{p[6]}},${{p[7]}})`);
   const roadFrame = summary.road_aligned_frame;
   const roadOrigin = roadFrame.origin;
   const roadRotation = roadFrame.world_to_local_rotation;
   const displayPoints = points.map((p) => toRoadAligned(p));
-  let measuredSigned = displayPoints.map((p) => p[2]);
   const deepestDisplayPoint = summary.deepest_point_xyz
     ? toRoadAligned(summary.deepest_point_xyz)
     : null;
@@ -722,16 +652,6 @@ def build_depth_preview_fragment(preview, summary):
   let dragMode = "orbit";
   let lastX = 0;
   let lastY = 0;
-  let pointerStartX = 0;
-  let pointerStartY = 0;
-  let toolMode = "orbit";
-  let selectionRect = null;
-  let calibrationIndices = [];
-  let roadIndices = [];
-  let featureIndices = [];
-  let localPlane = {{ a: 0, b: 0, c: 0, rmse: Number(summary.plane_rmse) || 0 }};
-  let latestMeasurement = null;
-  let lastHoverTime = 0;
 
   const fmt = (value) => Number.isFinite(value) ? value.toFixed(4) : "n/a";
   root.querySelector('[data-role="max-depth"]').textContent = fmt(summary.deepest_point_signed_distance);
@@ -741,8 +661,6 @@ def build_depth_preview_fragment(preview, summary):
   root.querySelector('[data-role="point-count"]').textContent = preview.point_count.toLocaleString();
   root.querySelector('[data-role="color-depth"]').textContent = `-${{fmt(preview.color_max_depth)}}`;
   root.querySelector('[data-role="color-height"]').textContent = `+${{fmt(preview.color_max_height)}}`;
-  root.querySelector('[data-role="model-origin"]').textContent =
-    `Model-axis origin O: source XYZ (${{roadOrigin.map(fmt).join(", ")}}); road-aligned XYZ (0, 0, 0).`;
   readout.textContent = summary.deepest_point_xyz
     ? `deepest signed height ${{fmt(summary.deepest_point_signed_distance)}} at (${{summary.deepest_point_xyz.map(fmt).join(", ")}})`
     : "Depth map";
@@ -782,260 +700,6 @@ def build_depth_preview_fragment(preview, summary):
     root.querySelectorAll("[data-view]").forEach((button) => {{
       button.setAttribute("aria-pressed", String(button.dataset.view === name));
     }});
-  }}
-
-  function setToolMode(mode) {{
-    toolMode = mode;
-    selectionRect = null;
-    root.querySelectorAll("[data-tool]").forEach((button) => {{
-      button.setAttribute("aria-pressed", String(button.dataset.tool === mode));
-    }});
-    const messages = {{
-      orbit: "旋轉模式：左鍵旋轉，右鍵或 Shift + 左鍵繞 Z 軸旋轉。",
-      calibration: "標定模式：依序點選三維標定點 A 與 B。第三次點選會重新開始。",
-      road: "基準路面模式：建議切換 Top，拖曳矩形框選沒有凸起或凹陷的完整路面。",
-      feature: "特徵模式：建議切換 Top，拖曳矩形框選要量測的凸起／凹陷區域。"
-    }};
-    readout.textContent = messages[mode] || messages.orbit;
-    render();
-  }}
-
-  function solve3x3(matrix, values) {{
-    const a = matrix.map((row, index) => [...row, values[index]]);
-    for (let column = 0; column < 3; column += 1) {{
-      let pivot = column;
-      for (let row = column + 1; row < 3; row += 1) {{
-        if (Math.abs(a[row][column]) > Math.abs(a[pivot][column])) pivot = row;
-      }}
-      if (Math.abs(a[pivot][column]) < 1e-12) return null;
-      [a[column], a[pivot]] = [a[pivot], a[column]];
-      const divisor = a[column][column];
-      for (let j = column; j < 4; j += 1) a[column][j] /= divisor;
-      for (let row = 0; row < 3; row += 1) {{
-        if (row === column) continue;
-        const factor = a[row][column];
-        for (let j = column; j < 4; j += 1) a[row][j] -= factor * a[column][j];
-      }}
-    }}
-    return [a[0][3], a[1][3], a[2][3]];
-  }}
-
-  function median(values) {{
-    if (!values.length) return NaN;
-    const sorted = values.slice().sort((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-  }}
-
-  function regressionPlane(indices) {{
-    let sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0;
-    for (const index of indices) {{
-      const [x, y, z] = displayPoints[index];
-      sx += x; sy += y; sz += z;
-      sxx += x * x; syy += y * y; sxy += x * y;
-      sxz += x * z; syz += y * z;
-    }}
-    return solve3x3(
-      [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, indices.length]],
-      [sxz, syz, sz]
-    );
-  }}
-
-  function fitSelectedRoadPlane(indices) {{
-    if (indices.length < 12) return null;
-    let active = indices.slice();
-    let coefficients = null;
-    for (let iteration = 0; iteration < 4; iteration += 1) {{
-      coefficients = regressionPlane(active);
-      if (!coefficients) return null;
-      const [a, b, c] = coefficients;
-      const residuals = active.map((index) => {{
-        const [x, y, z] = displayPoints[index];
-        return z - (a * x + b * y + c);
-      }});
-      const residualMedian = median(residuals);
-      const mad = median(residuals.map((value) => Math.abs(value - residualMedian)));
-      const robustSigma = Math.max(1e-9, 1.4826 * mad);
-      const next = active.filter((index, position) => (
-        Math.abs(residuals[position] - residualMedian) <= 2.8 * robustSigma
-      ));
-      if (next.length < 12 || next.length === active.length) break;
-      active = next;
-    }}
-    coefficients = regressionPlane(active);
-    if (!coefficients) return null;
-    const [a, b, c] = coefficients;
-    const normalizer = Math.sqrt(a * a + b * b + 1);
-    const residuals = active.map((index) => {{
-      const [x, y, z] = displayPoints[index];
-      return (z - (a * x + b * y + c)) / normalizer;
-    }});
-    const rmse = Math.sqrt(residuals.reduce((sum, value) => sum + value * value, 0) / residuals.length);
-    return {{ a, b, c, rmse, inlierCount: active.length, selectedCount: indices.length }};
-  }}
-
-  function signedHeightAt(index) {{
-    const [x, y, z] = displayPoints[index];
-    const denominator = Math.sqrt(localPlane.a * localPlane.a + localPlane.b * localPlane.b + 1);
-    return (z - (localPlane.a * x + localPlane.b * y + localPlane.c)) / denominator;
-  }}
-
-  function signedColor(value) {{
-    const road = [155, 155, 155];
-    const target = value < 0 ? [42, 93, 205] : [220, 55, 45];
-    const maximum = value < 0 ? preview.color_max_depth : preview.color_max_height;
-    const t = Math.max(0, Math.min(1, Math.abs(value) / Math.max(1e-12, maximum)));
-    const rgb = road.map((channel, index) => Math.round(channel * (1 - t) + target[index] * t));
-    return `rgb(${{rgb[0]}},${{rgb[1]}},${{rgb[2]}})`;
-  }}
-
-  function updateLocalSignedAndColors() {{
-    measuredSigned = displayPoints.map((_, index) => signedHeightAt(index));
-    colors = measuredSigned.map((value) => signedColor(value));
-  }}
-
-  function calibrationInfo() {{
-    if (calibrationIndices.length !== 2) return null;
-    const a = displayPoints[calibrationIndices[0]];
-    const b = displayPoints[calibrationIndices[1]];
-    const modelDistance = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-    const knownLengthCm = Number(calibrationLengthInput.value);
-    const knownLengthUncertaintyCm = Math.max(0, Number(calibrationUncertaintyInput.value) || 0);
-    if (!(modelDistance > 0) || !(knownLengthCm > 0)) return null;
-    const cmPerModelUnit = knownLengthCm / modelDistance;
-    const distanceUncertainty = Math.sqrt(2) * Math.max(0, localPlane.rmse || 0);
-    const relativeUncertainty = Math.hypot(
-      knownLengthUncertaintyCm / knownLengthCm,
-      distanceUncertainty / modelDistance
-    );
-    return {{
-      indices: calibrationIndices.slice(),
-      sourcePoints: calibrationIndices.map((index) => points[index].slice(0, 3)),
-      roadAlignedPoints: calibrationIndices.map((index) => displayPoints[index].slice()),
-      modelDistance,
-      knownLengthCm,
-      knownLengthUncertaintyCm,
-      cmPerModelUnit,
-      relativeUncertainty,
-      estimatedScaleUncertainty: cmPerModelUnit * relativeUncertainty
-    }};
-  }}
-
-  function sideStatistics(kind) {{
-    const percent = Math.max(0.1, Math.min(25, Number(extremePercentInput.value) || 1));
-    let values = featureIndices.map((index) => ({{ index, signed: measuredSigned[index] }}));
-    values = kind === "protrusion"
-      ? values.filter((item) => item.signed > 0).sort((a, b) => b.signed - a.signed)
-      : values.filter((item) => item.signed < 0).sort((a, b) => a.signed - b.signed);
-    if (!values.length) return null;
-    const count = Math.max(1, Math.ceil(values.length * percent / 100));
-    const extreme = values.slice(0, count);
-    const magnitudes = extreme.map((item) => Math.abs(item.signed));
-    const mean = magnitudes.reduce((sum, value) => sum + value, 0) / magnitudes.length;
-    const variance = magnitudes.length > 1
-      ? magnitudes.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (magnitudes.length - 1)
-      : 0;
-    const standardDeviation = Math.sqrt(variance);
-    const uncertaintyModelUnits = Math.hypot(
-      Math.max(0, localPlane.rmse || 0),
-      standardDeviation / Math.sqrt(magnitudes.length)
-    );
-    const calibration = calibrationInfo();
-    let valueCm = null, uncertaintyCm = null, rangeCm = null;
-    if (calibration) {{
-      valueCm = mean * calibration.cmPerModelUnit;
-      uncertaintyCm = Math.hypot(
-        uncertaintyModelUnits * calibration.cmPerModelUnit,
-        valueCm * calibration.relativeUncertainty
-      );
-      rangeCm = [Math.max(0, valueCm - uncertaintyCm), valueCm + uncertaintyCm];
-    }}
-    return {{
-      kind,
-      sidePointCount: values.length,
-      extremePercent: percent,
-      extremeCount: magnitudes.length,
-      meanModelUnits: mean,
-      singleExtremeModelUnits: magnitudes[0],
-      standardDeviationModelUnits: standardDeviation,
-      uncertaintyModelUnits,
-      valueCm,
-      uncertaintyCm,
-      rangeCm,
-      centroidSourceXYZ: [0, 1, 2].map((axis) => (
-        extreme.reduce((sum, item) => sum + points[item.index][axis], 0) / extreme.length
-      )),
-      centroidRoadAlignedXYZ: [0, 1, 2].map((axis) => (
-        extreme.reduce((sum, item) => sum + displayPoints[item.index][axis], 0) / extreme.length
-      ))
-    }};
-  }}
-
-  function coordinateBounds(indices, coordinates) {{
-    if (!indices.length) return null;
-    const minimum = [Infinity, Infinity, Infinity];
-    const maximum = [-Infinity, -Infinity, -Infinity];
-    for (const index of indices) {{
-      for (let axis = 0; axis < 3; axis += 1) {{
-        minimum[axis] = Math.min(minimum[axis], coordinates[index][axis]);
-        maximum[axis] = Math.max(maximum[axis], coordinates[index][axis]);
-      }}
-    }}
-    return {{ min: minimum, max: maximum }};
-  }}
-
-  function resultCard(title, body) {{
-    return `<div class="measurement-result"><strong>${{title}}</strong><div class="text-small">${{body}}</div></div>`;
-  }}
-
-  function formattedSideResult(label, result) {{
-    if (!result) return resultCard(label, "框選區域中沒有這一側的點。");
-    if (!Number.isFinite(result.valueCm)) {{
-      return resultCard(
-        label,
-        `${{fmt(result.meanModelUnits)}} ± ${{fmt(result.uncertaintyModelUnits)}} 模型單位；請先完成兩點標定。`
-      );
-    }}
-    return resultCard(
-      label,
-      `${{result.valueCm.toFixed(2)}} ± ${{result.uncertaintyCm.toFixed(2)}} cm；範圍 ${{result.rangeCm[0].toFixed(2)}}–${{result.rangeCm[1].toFixed(2)}} cm；採用 ${{result.extremePercent.toFixed(1)}}%／${{result.extremeCount.toLocaleString()}} 點。`
-    );
-  }}
-
-  function updateMeasurementResults() {{
-    const calibration = calibrationInfo();
-    const protrusionResult = featureIndices.length ? sideStatistics("protrusion") : null;
-    const depressionResult = featureIndices.length ? sideStatistics("depression") : null;
-    const calibrationText = calibration
-      ? `A–B 三維距離 ${{fmt(calibration.modelDistance)}} 模型單位；比例 ${{calibration.cmPerModelUnit.toFixed(4)}} ± ${{calibration.estimatedScaleUncertainty.toFixed(4)}} cm/單位。`
-      : `已選 ${{calibrationIndices.length}}/2 點；請點選標定 A 與 B。`;
-    const roadText = roadIndices.length
-      ? `選取 ${{roadIndices.length.toLocaleString()}} 點，穩健內點 ${{localPlane.inlierCount.toLocaleString()}}；RMSE ${{fmt(localPlane.rmse)}} 模型單位${{calibration ? `（${{(localPlane.rmse * calibration.cmPerModelUnit).toFixed(2)}} cm）` : ""}}。`
-      : `尚未框選；目前使用原始全場景基準面，RMSE ${{fmt(localPlane.rmse)}} 模型單位。`;
-    const featureText = featureIndices.length
-      ? `已框選 ${{featureIndices.length.toLocaleString()}} 個預覽點。`
-      : "尚未框選待測區域。";
-    measurementResults.innerHTML = [
-      resultCard("標定比例", calibrationText),
-      resultCard("局部基準路面", roadText),
-      resultCard("待測區域", featureText),
-      formattedSideResult("凸起 +Z", protrusionResult),
-      formattedSideResult("凹陷 −Z", depressionResult)
-    ].join("");
-    latestMeasurement = {{
-      generatedAt: new Date().toISOString(),
-      coordinateConvention: "+Z protrusion/above road, -Z depression/below road",
-      uncertaintyMethod: "quadrature of selected-road RMSE, extreme-group standard error, calibration length uncertainty, and A/B endpoint uncertainty estimated from road RMSE",
-      calibration,
-      roadPlane: {{ ...localPlane, selectedPointCount: roadIndices.length }},
-      roadSelectionBoundsSourceXYZ: coordinateBounds(roadIndices, points),
-      roadSelectionBoundsRoadAlignedXYZ: coordinateBounds(roadIndices, displayPoints),
-      featureSelectionPointCount: featureIndices.length,
-      featureSelectionBoundsSourceXYZ: coordinateBounds(featureIndices, points),
-      featureSelectionBoundsRoadAlignedXYZ: coordinateBounds(featureIndices, displayPoints),
-      protrusion: protrusionResult,
-      depression: depressionResult
-    }};
   }}
 
   function projectCoordinate(coord, width, height, scale, cy, sy, cp, sp, cx, midY) {{
@@ -1098,71 +762,10 @@ def build_depth_preview_fragment(preview, summary):
       }}
     }}
     ctx.globalAlpha = 1;
-    drawMeasurementSelections();
     drawDeepestMarker(width, height, scale, cy, sy, cp, sp, cx, midY);
     drawHighestMarker(width, height, scale, cy, sy, cp, sp, cx, midY);
-    drawModelCoordinateAxes(width, height, scale, cy, sy, cp, sp, cx, midY);
     drawCoordinateAxes(width, height, cy, sy, cp, sp);
     drawScale(width, height);
-  }}
-
-  function drawIndexOverlay(indices, color) {{
-    if (!indices.length) return;
-    const stride = Math.max(1, Math.ceil(indices.length / 12000));
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.82;
-    for (let position = 0; position < indices.length; position += stride) {{
-      const projectedPoint = projected[indices[position]];
-      if (!projectedPoint) continue;
-      ctx.fillRect(projectedPoint[0] - 1.5, projectedPoint[1] - 1.5, 3, 3);
-    }}
-    ctx.restore();
-  }}
-
-  function drawCalibrationSelection() {{
-    if (!calibrationIndices.length) return;
-    ctx.save();
-    ctx.strokeStyle = "rgb(245, 160, 25)";
-    ctx.fillStyle = "rgb(245, 160, 25)";
-    ctx.lineWidth = 3;
-    if (calibrationIndices.length === 2) {{
-      const a = projected[calibrationIndices[0]];
-      const b = projected[calibrationIndices[1]];
-      ctx.beginPath();
-      ctx.moveTo(a[0], a[1]);
-      ctx.lineTo(b[0], b[1]);
-      ctx.stroke();
-    }}
-    calibrationIndices.forEach((index, position) => {{
-      const point = projected[index];
-      ctx.beginPath();
-      ctx.arc(point[0], point[1], 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "black";
-      ctx.fillText(position === 0 ? "A" : "B", point[0] - 4, point[1] + 4);
-      ctx.fillStyle = "rgb(245, 160, 25)";
-    }});
-    ctx.restore();
-  }}
-
-  function drawMeasurementSelections() {{
-    drawIndexOverlay(roadIndices, "rgb(30, 210, 210)");
-    drawIndexOverlay(featureIndices, "rgb(220, 45, 190)");
-    drawCalibrationSelection();
-    if (!selectionRect) return;
-    const x = Math.min(selectionRect.x0, selectionRect.x1);
-    const y = Math.min(selectionRect.y0, selectionRect.y1);
-    const width = Math.abs(selectionRect.x1 - selectionRect.x0);
-    const height = Math.abs(selectionRect.y1 - selectionRect.y0);
-    ctx.save();
-    ctx.fillStyle = toolMode === "road" ? "rgba(30,210,210,0.13)" : "rgba(220,45,190,0.13)";
-    ctx.strokeStyle = toolMode === "road" ? "rgb(30,210,210)" : "rgb(220,45,190)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([7, 4]);
-    ctx.fillRect(x, y, width, height);
-    ctx.strokeRect(x, y, width, height);
-    ctx.restore();
   }}
 
   function drawAxisArrow(originX, originY, direction, label, color) {{
@@ -1202,71 +805,6 @@ def build_depth_preview_fragment(preview, summary):
     ctx.fillText(`+${{label}}`, endX + dx * 8 - 5, endY + dy * 8 + 4);
     ctx.globalAlpha = 0.72;
     ctx.fillText(`-${{label}}`, negativeX - dx * 15 - 5, negativeY - dy * 10 + 4);
-    ctx.restore();
-  }}
-
-  function drawModelCoordinateAxes(width, height, scale, cy, sy, cp, sp, cx, midY) {{
-    const axisLength = radius * 0.30;
-    const negativeLength = axisLength * 0.28;
-    const origin = [0, 0, 0];
-    const [ox, oy] = projectCoordinate(origin, width, height, scale, cy, sy, cp, sp, cx, midY);
-    const axes = [
-      {{ vector: [1, 0, 0], label: "X", color: "rgb(220,72,72)" }},
-      {{ vector: [0, 1, 0], label: "Y", color: "rgb(60,170,95)" }},
-      {{ vector: [0, 0, 1], label: "Z", color: "rgb(65,120,225)" }}
-    ];
-
-    ctx.save();
-    ctx.font = "600 13px sans-serif";
-    for (const axis of axes) {{
-      const positive = axis.vector.map((value) => value * axisLength);
-      const negative = axis.vector.map((value) => -value * negativeLength);
-      const [px, py] = projectCoordinate(positive, width, height, scale, cy, sy, cp, sp, cx, midY);
-      const [nx, ny] = projectCoordinate(negative, width, height, scale, cy, sy, cp, sp, cx, midY);
-
-      ctx.strokeStyle = axis.color;
-      ctx.lineWidth = 2;
-      ctx.globalAlpha = 0.58;
-      ctx.setLineDash([5, 4]);
-      ctx.beginPath();
-      ctx.moveTo(nx, ny);
-      ctx.lineTo(ox, oy);
-      ctx.stroke();
-
-      ctx.globalAlpha = 1;
-      ctx.setLineDash([]);
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(ox, oy);
-      ctx.lineTo(px, py);
-      ctx.stroke();
-
-      const screenLength = Math.max(1e-9, Math.hypot(px - ox, py - oy));
-      const dx = (px - ox) / screenLength;
-      const dy = (py - oy) / screenLength;
-      const angle = Math.atan2(dy, dx);
-      const arrow = 8;
-      ctx.fillStyle = axis.color;
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(px - arrow * Math.cos(angle - Math.PI / 6), py - arrow * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(px - arrow * Math.cos(angle + Math.PI / 6), py - arrow * Math.sin(angle + Math.PI / 6));
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillText(`+${{axis.label}}`, px + dx * 10 - 5, py + dy * 10 + 4);
-    }}
-
-    const backing = getComputedStyle(root).getPropertyValue("--background").trim() || "white";
-    const text = getComputedStyle(root).getPropertyValue("--foreground").trim() || "black";
-    ctx.fillStyle = backing;
-    ctx.beginPath();
-    ctx.arc(ox, oy, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = text;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = text;
-    ctx.fillText("O (0,0,0)", ox + 11, oy - 10);
     ctx.restore();
   }}
 
@@ -1371,93 +909,6 @@ def build_depth_preview_fragment(preview, summary):
     ctx.fillText(`-${{fmt(preview.color_max_depth)}} / +${{fmt(preview.color_max_height)}} units`, x, y - 6);
   }}
 
-  function projectedIndicesInside(rectangle) {{
-    const xmin = Math.min(rectangle.x0, rectangle.x1);
-    const xmax = Math.max(rectangle.x0, rectangle.x1);
-    const ymin = Math.min(rectangle.y0, rectangle.y1);
-    const ymax = Math.max(rectangle.y0, rectangle.y1);
-    const selected = [];
-    for (let index = 0; index < projected.length; index += 1) {{
-      const [x, y] = projected[index];
-      if (x >= xmin && x <= xmax && y >= ymin && y <= ymax) selected.push(index);
-    }}
-    return selected;
-  }}
-
-  function finishBoxSelection() {{
-    if (!selectionRect) return;
-    const width = Math.abs(selectionRect.x1 - selectionRect.x0);
-    const height = Math.abs(selectionRect.y1 - selectionRect.y0);
-    if (width < 4 || height < 4) {{
-      readout.textContent = "框選範圍太小，請拖曳較大的矩形。";
-      selectionRect = null;
-      render();
-      return;
-    }}
-    const selected = projectedIndicesInside(selectionRect);
-    if (toolMode === "road") {{
-      const fitted = fitSelectedRoadPlane(selected);
-      if (!fitted) {{
-        readout.textContent = "基準路面點太少或分布退化，請重新框選較大的完整路面。";
-      }} else {{
-        roadIndices = selected;
-        localPlane = fitted;
-        updateLocalSignedAndColors();
-        readout.textContent = `已用 ${{fitted.inlierCount.toLocaleString()}} 個內點重新擬合局部基準路面。`;
-      }}
-    }} else if (toolMode === "feature") {{
-      featureIndices = selected;
-      readout.textContent = `已選取 ${{selected.length.toLocaleString()}} 個待測點。`;
-    }}
-    selectionRect = null;
-    updateMeasurementResults();
-    render();
-  }}
-
-  function pickCalibrationPoint(x, y) {{
-    const index = nearestPoint(x, y);
-    if (index < 0) {{
-      readout.textContent = "附近沒有可選取的點，請點在點雲上。";
-      return;
-    }}
-    if (calibrationIndices.length >= 2) calibrationIndices = [];
-    calibrationIndices.push(index);
-    readout.textContent = calibrationIndices.length === 1
-      ? "已選標定點 A，請再點選標定點 B。"
-      : "標定點 A、B 已完成，可調整實際長度與長度誤差。";
-    updateMeasurementResults();
-    render();
-  }}
-
-  function clearInteractiveMeasurement() {{
-    calibrationIndices = [];
-    roadIndices = [];
-    featureIndices = [];
-    selectionRect = null;
-    localPlane = {{ a: 0, b: 0, c: 0, rmse: Number(summary.plane_rmse) || 0 }};
-    measuredSigned = displayPoints.map((point) => point[2]);
-    colors = baseColors.slice();
-    latestMeasurement = null;
-    updateMeasurementResults();
-    readout.textContent = "互動量測已清除。";
-    render();
-  }}
-
-  function downloadMeasurementJson() {{
-    updateMeasurementResults();
-    if (!latestMeasurement) return;
-    const blob = new Blob([JSON.stringify(latestMeasurement, null, 2)], {{ type: "application/json" }});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "interactive_height_depth_measurement.json";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-    readout.textContent = "已下載互動量測 JSON。";
-  }}
-
   function nearestPoint(x, y) {{
     let best = -1;
     let bestDistance = 64;
@@ -1476,44 +927,15 @@ def build_depth_preview_fragment(preview, summary):
 
   canvas.addEventListener("pointerdown", (event) => {{
     if (event.button === 2) event.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const localX = event.clientX - rect.left;
-    const localY = event.clientY - rect.top;
     pointerDown = true;
-    pointerStartX = localX;
-    pointerStartY = localY;
-    if (event.button === 2 || event.shiftKey) {{
-      dragMode = "roll";
-    }} else if (toolMode === "road" || toolMode === "feature") {{
-      dragMode = "select";
-      selectionRect = {{ x0: localX, y0: localY, x1: localX, y1: localY }};
-    }} else if (toolMode === "calibration") {{
-      dragMode = "calibration";
-    }} else {{
-      dragMode = "orbit";
-    }}
+    dragMode = event.button === 2 || event.shiftKey ? "roll" : "orbit";
     lastX = event.clientX;
     lastY = event.clientY;
     canvas.setPointerCapture(event.pointerId);
   }});
   canvas.addEventListener("pointerup", (event) => {{
-    const rect = canvas.getBoundingClientRect();
-    const localX = event.clientX - rect.left;
-    const localY = event.clientY - rect.top;
-    if (dragMode === "select") {{
-      if (selectionRect) {{
-        selectionRect.x1 = localX;
-        selectionRect.y1 = localY;
-      }}
-      finishBoxSelection();
-    }} else if (
-      dragMode === "calibration" &&
-      Math.hypot(localX - pointerStartX, localY - pointerStartY) <= 6
-    ) {{
-      pickCalibrationPoint(localX, localY);
-    }}
     pointerDown = false;
-    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    canvas.releasePointerCapture(event.pointerId);
   }});
   canvas.addEventListener("pointerleave", () => {{
     pointerDown = false;
@@ -1524,12 +946,9 @@ def build_depth_preview_fragment(preview, summary):
   canvas.addEventListener("pointermove", (event) => {{
     const rect = canvas.getBoundingClientRect();
     if (pointerDown) {{
-      if (dragMode === "select") {{
-        selectionRect.x1 = event.clientX - rect.left;
-        selectionRect.y1 = event.clientY - rect.top;
-      }} else if (dragMode === "roll") {{
+      if (dragMode === "roll") {{
         setRoll(roll + (event.clientX - lastX) * 0.008);
-      }} else if (dragMode === "orbit") {{
+      }} else {{
         yaw += (event.clientX - lastX) * 0.008;
         pitch = Math.max(-1.45, Math.min(1.45, pitch + (event.clientY - lastY) * 0.008));
       }}
@@ -1538,15 +957,11 @@ def build_depth_preview_fragment(preview, summary):
       setPressed("");
       render();
     }} else {{
-      const now = performance.now();
-      if (now - lastHoverTime < 70) return;
-      lastHoverTime = now;
       const selected = nearestPoint(event.clientX - rect.left, event.clientY - rect.top);
       if (selected >= 0) {{
         const p = points[selected];
-        const signed = measuredSigned[selected];
-        const kind = signed < 0 ? "depression" : "protrusion";
-        readout.textContent = `${{kind}} signed height ${{fmt(signed)}} at (${{fmt(p[0])}}, ${{fmt(p[1])}}, ${{fmt(p[2])}})`;
+        const kind = p[3] < 0 ? "depression" : "protrusion";
+        readout.textContent = `${{kind}} signed height ${{fmt(p[3])}} at (${{fmt(p[0])}}, ${{fmt(p[1])}}, ${{fmt(p[2])}})`;
       }}
     }}
   }});
@@ -1591,21 +1006,6 @@ def build_depth_preview_fragment(preview, summary):
       render();
     }});
   }});
-  root.querySelectorAll("[data-tool]").forEach((button) => {{
-    button.addEventListener("click", () => setToolMode(button.dataset.tool));
-  }});
-  root.querySelector('[data-action="clear-measurement"]').addEventListener(
-    "click", clearInteractiveMeasurement
-  );
-  root.querySelector('[data-action="export-measurement"]').addEventListener(
-    "click", downloadMeasurementJson
-  );
-  [calibrationLengthInput, calibrationUncertaintyInput, extremePercentInput].forEach((input) => {{
-    input.addEventListener("input", () => {{
-      updateMeasurementResults();
-      render();
-    }});
-  }});
   sizeInput.addEventListener("input", () => {{
     pointSize = Number(sizeInput.value);
     render();
@@ -1623,9 +1023,7 @@ def build_depth_preview_fragment(preview, summary):
   }}
   setRoll(0);
   setPressed("oblique");
-  updateMeasurementResults();
   resizeCanvas();
-  setToolMode("orbit");
 }})();
 </script>
 """
@@ -2118,16 +1516,13 @@ def parse_args():
         "--preview-html",
         type=Path,
         default=None,
-        help=(
-            "Optional interactive HTML preview with 3D axes, adjustable two-point "
-            "scale calibration, road/feature box selection, and uncertainty estimates."
-        ),
+        help="Optional interactive HTML fragment preview with the deepest point marked.",
     )
     parser.add_argument(
         "--preview-points",
         type=int,
-        default=120000,
-        help="Number of sampled points embedded in the HTML preview (default: 120000).",
+        default=60000,
+        help="Number of sampled points embedded in the HTML preview (default: 60000).",
     )
     parser.add_argument(
         "--deepest-marker",
