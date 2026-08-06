@@ -156,14 +156,36 @@
       2.7942990551897897
     ]
   },
+  "protrusion": {
+    "max_height": 0.0688635873354474,
+    "highest_point_xyz": [
+      2.81502366065979,
+      0.07295918464660645,
+      0.4151543378829956
+    ],
+    "highest_point_signed_height": 0.0688635873354474,
+    "top_percent": 1.0,
+    "top_count": 7571,
+    "top_mean_signed_height": 0.04350757472657734,
+    "top_percentile_signed_height": 0.035112876786319025,
+    "top_mean_height": 0.04350757472657734,
+    "top_percentile_height": 0.035112876786319025,
+    "top_centroid_xyz": [
+      2.5708086111882595,
+      0.3815768490735628,
+      0.22923330914853415
+    ]
+  },
   "depth_color": {
     "colored_vertices": 757048,
-    "color_max_depth": 0.040898759304112575
+    "color_max_depth": 0.040898759304112575,
+    "color_max_height": 0.035112876786319025
   },
   "road_aligned_ply": {
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\two_videos\\depth\\meshed-poisson_twovideos_proxy_1500k_road_aligned_depth_map.ply",
     "colored_vertices": 757048,
     "color_max_depth": 0.040898759304112575,
+    "color_max_height": 0.035112876786319025,
     "bounds": {
       "min": [
         -3.805699541055757,
@@ -185,7 +207,7 @@
   },
   "preview_json": {
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\two_videos\\depth\\meshed-poisson_twovideos_proxy_1500k_depth_preview_points.json",
-    "preview_points": 60000
+    "preview_points": 120000
   },
   "preview_html": {
     "path": "C:\\research\\neuralangelo_test\\output_colmap\\two_videos\\depth\\meshed-poisson_twovideos_proxy_1500k_depth_preview.html"
